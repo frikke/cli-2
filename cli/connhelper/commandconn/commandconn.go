@@ -149,7 +149,7 @@ func (c *commandConn) handleEOF(err error) error {
 	c.stderrMu.Lock()
 	stderr := c.stderr.String()
 	c.stderrMu.Unlock()
-	return errors.Errorf("command %v has exited with %v, please make sure the URL is valid, and Docker 18.09 or later is installed on the remote host: stderr=%s", c.cmd.Args, werr, stderr)
+	return errors.Errorf("command %v has exited with %v, make sure the URL is valid, and Docker 18.09 or later is installed on the remote host: stderr=%s", c.cmd.Args, werr, stderr)
 }
 
 func ignorableCloseError(err error) bool {
@@ -163,9 +163,8 @@ func (c *commandConn) Read(p []byte) (int, error) {
 	// Close might get called
 	if c.closing.Load() {
 		// If we're currently closing the connection
-		// we don't want to call onEOF, but we do want
-		// to return an io.EOF
-		return 0, io.EOF
+		// we don't want to call onEOF
+		return n, err
 	}
 
 	return n, c.handleEOF(err)
@@ -178,9 +177,8 @@ func (c *commandConn) Write(p []byte) (int, error) {
 	// Close might get called
 	if c.closing.Load() {
 		// If we're currently closing the connection
-		// we don't want to call onEOF, but we do want
-		// to return an io.EOF
-		return 0, io.EOF
+		// we don't want to call onEOF
+		return n, err
 	}
 
 	return n, c.handleEOF(err)

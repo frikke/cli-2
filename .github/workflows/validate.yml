@@ -1,5 +1,14 @@
 name: validate
 
+# Default to 'contents: read', which grants actions to read commits.
+#
+# If any permission is set, any permission not included in the list is
+# implicitly set to "none".
+#
+# see https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#permissions
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -16,7 +25,7 @@ on:
 
 jobs:
   validate:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -27,21 +36,18 @@ jobs:
           - update-authors # ensure authors update target runs fine
     steps:
       -
-        name: Checkout
-        uses: actions/checkout@v3
-      -
         name: Run
-        uses: docker/bake-action@v3
+        uses: docker/bake-action@v6
         with:
           targets: ${{ matrix.target }}
 
   # check that the generated Markdown and the checked-in files match
   validate-md:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       -
         name: Generate
         shell: 'script --return --quiet --command "bash {0}"'
@@ -57,7 +63,7 @@ jobs:
           fi
 
   validate-make:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -67,7 +73,7 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       -
         name: Run
         shell: 'script --return --quiet --command "bash {0}"'

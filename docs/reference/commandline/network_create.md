@@ -7,18 +7,19 @@ Create a network
 
 | Name                      | Type          | Default   | Description                                             |
 |:--------------------------|:--------------|:----------|:--------------------------------------------------------|
-| `--attachable`            |               |           | Enable manual container attachment                      |
+| `--attachable`            | `bool`        |           | Enable manual container attachment                      |
 | `--aux-address`           | `map`         | `map[]`   | Auxiliary IPv4 or IPv6 addresses used by Network driver |
 | `--config-from`           | `string`      |           | The network from which to copy the configuration        |
-| `--config-only`           |               |           | Create a configuration only network                     |
+| `--config-only`           | `bool`        |           | Create a configuration only network                     |
 | `-d`, `--driver`          | `string`      | `bridge`  | Driver to manage the Network                            |
 | `--gateway`               | `stringSlice` |           | IPv4 or IPv6 Gateway for the master subnet              |
-| [`--ingress`](#ingress)   |               |           | Create swarm routing-mesh network                       |
-| [`--internal`](#internal) |               |           | Restrict external access to the network                 |
+| [`--ingress`](#ingress)   | `bool`        |           | Create swarm routing-mesh network                       |
+| [`--internal`](#internal) | `bool`        |           | Restrict external access to the network                 |
 | `--ip-range`              | `stringSlice` |           | Allocate container ip from a sub-range                  |
 | `--ipam-driver`           | `string`      | `default` | IP Address Management Driver                            |
 | `--ipam-opt`              | `map`         | `map[]`   | Set IPAM driver specific options                        |
-| `--ipv6`                  |               |           | Enable IPv6 networking                                  |
+| `--ipv4`                  | `bool`        | `true`    | Enable or disable IPv4 address assignment               |
+| `--ipv6`                  | `bool`        |           | Enable or disable IPv6 address assignment               |
 | `--label`                 | `list`        |           | Set metadata on a network                               |
 | `-o`, `--opt`             | `map`         | `map[]`   | Set driver specific options                             |
 | `--scope`                 | `string`      |           | Control the network's scope                             |
@@ -34,7 +35,7 @@ built-in network drivers. If you have installed a third party or your own custom
 network driver you can specify that `DRIVER` here also. If you don't specify the
 `--driver` option, the command automatically creates a `bridge` network for you.
 When you install Docker Engine it creates a `bridge` network automatically. This
-network corresponds to the `docker0` bridge that Engine has traditionally relied
+network corresponds to the `docker0` bridge that Docker Engine has traditionally relied
 on. When you launch a new container with  `docker run` it automatically connects to
 this bridge network. You cannot remove this default bridge network, but you can
 create new ones using the `network create` command.
@@ -43,8 +44,8 @@ create new ones using the `network create` command.
 $ docker network create -d bridge my-bridge-network
 ```
 
-Bridge networks are isolated networks on a single Engine installation. If you
-want to create a network that spans multiple Docker hosts each running an
+Bridge networks are isolated networks on a single Docker Engine installation. If you
+want to create a network that spans multiple Docker hosts each running Docker
 Engine, you must enable Swarm mode, and create an `overlay` network. To read more
 about overlay networks with Swarm mode, see ["*use overlay networks*"](https://docs.docker.com/network/overlay/).
 
@@ -61,7 +62,7 @@ to access the network stack of a swarm service.
 
 The `--attachable` option used in the example above disables this restriction,
 and allows for both swarm services and manually started containers to attach to
-the oerlay network.
+the overlay network.
 
 Network names must be unique. The Docker daemon attempts to identify naming
 conflicts but this is not guaranteed. It is the user's responsibility to avoid
@@ -97,17 +98,17 @@ You can connect multiple containers to the same network. Once connected, the
 containers can communicate using only another container's IP address or name.
 For `overlay` networks or custom plugins that support multi-host connectivity,
 containers connected to the same multi-host network but launched from different
-Engines can also communicate in this way.
+daemons can also communicate in this way.
 
 You can disconnect a container from a network using the `docker network
 disconnect` command.
 
 ### Specify advanced options
 
-When you create a network, Engine creates a non-overlapping subnetwork for the
-network by default. This subnetwork is not a subdivision of an existing network.
-It is purely for ip-addressing purposes. You can override this default and
-specify subnetwork values directly using the `--subnet` option. On a
+When you create a network, Docker Engine creates a non-overlapping subnetwork
+for the network by default. This subnetwork is not a subdivision of an existing
+network. It is purely for ip-addressing purposes. You can override this default
+and specify subnetwork values directly using the `--subnet` option. On a
 `bridge` network you can only create a single subnet:
 
 ```console
@@ -126,8 +127,8 @@ $ docker network create \
   br0
 ```
 
-If you omit the `--gateway` flag the Engine selects one for you from inside a
-preferred pool. For `overlay` networks and for network driver plugins that
+If you omit the `--gateway` flag, Docker Engine selects one for you from inside
+a preferred pool. For `overlay` networks and for network driver plugins that
 support it you can create multiple subnetworks. This example uses two `/25`
 subnet mask to adhere to the current guidance of not having more than 256 IPs in
 a single overlay network. Each of the subnetworks has 126 usable addresses.
@@ -144,33 +145,35 @@ $ docker network create -d overlay \
 ```
 
 Be sure that your subnetworks do not overlap. If they do, the network create
-fails and Engine returns an error.
+fails and Docker Engine returns an error.
 
 ### Bridge driver options
 
-When creating a custom network, the default network driver (i.e. `bridge`) has
-additional options that can be passed. The following are those options and the
-equivalent docker daemon flags used for docker0 bridge:
+When creating a custom `bridge` network, the following additional options can
+be passed. Some of these have equivalent flags that can be used on the dockerd
+command line or in `daemon.json` to configure the default bridge, `docker0`:
 
-| Option                                           | Equivalent  | Description                                           |
-|--------------------------------------------------|-------------|-------------------------------------------------------|
-| `com.docker.network.bridge.name`                 | -           | Bridge name to be used when creating the Linux bridge |
-| `com.docker.network.bridge.enable_ip_masquerade` | `--ip-masq` | Enable IP masquerading                                |
-| `com.docker.network.bridge.enable_icc`           | `--icc`     | Enable or Disable Inter Container Connectivity        |
-| `com.docker.network.bridge.host_binding_ipv4`    | `--ip`      | Default IP when binding container ports               |
-| `com.docker.network.driver.mtu`                  | `--mtu`     | Set the containers network MTU                        |
-| `com.docker.network.container_iface_prefix`      | -           | Set a custom prefix for container interfaces          |
+| Network create option                            | Daemon option for `docker0` | Description                                           |
+|--------------------------------------------------|-----------------------------|-------------------------------------------------------|
+| `com.docker.network.bridge.name`                 | -                           | Bridge name to be used when creating the Linux bridge |
+| `com.docker.network.bridge.enable_ip_masquerade` | `--ip-masq`                 | Enable IP masquerading                                |
+| `com.docker.network.bridge.enable_icc`           | `--icc`                     | Enable or Disable Inter Container Connectivity        |
+| `com.docker.network.bridge.host_binding_ipv4`    | `--ip`                      | Default IP when binding container ports               |
+| `com.docker.network.driver.mtu`                  | `--mtu`                     | Set the containers network MTU                        |
+| `com.docker.network.container_iface_prefix`      | -                           | Set a custom prefix for container interfaces          |
 
 The following arguments can be passed to `docker network create` for any
-network driver, again with their approximate equivalents to `docker daemon`.
+network driver, again with their approximate equivalents to Docker daemon
+flags used for the `docker0` bridge:
 
-| Argument     | Equivalent     | Description                                |
-|--------------|----------------|--------------------------------------------|
-| `--gateway`  | -              | IPv4 or IPv6 Gateway for the master subnet |
-| `--ip-range` | `--fixed-cidr` | Allocate IPs from a range                  |
-| `--internal` | -              | Restrict external access to the network    |
-| `--ipv6`     | `--ipv6`       | Enable IPv6 networking                     |
-| `--subnet`   | `--bip`        | Subnet for network                         |
+| Network create option | Daemon option for `docker0`       | Description                                |
+|-----------------------|-----------------------------------|--------------------------------------------|
+| `--gateway`           | -                                 | IPv4 or IPv6 Gateway for the master subnet |
+| `--ip-range`          | `--fixed-cidr`, `--fixed-cidr-v6` | Allocate IP addresses from a range         |
+| `--internal`          | -                                 | Restrict external access to the network    |
+| `--ipv4`              | -                                 | Enable or disable IPv4 address assignment  |
+| `--ipv6`              | `--ipv6`                          | Enable or disable IPv6 address assignment  |
+| `--subnet`            | `--bip`, `--bip6`                 | Subnet for network                         |
 
 For example, let's use `-o` or `--opt` options to specify an IP address binding
 when publishing ports:
@@ -182,6 +185,12 @@ $ docker network create \
 ```
 
 ### <a name="internal"></a> Network internal mode (--internal)
+
+Containers on an internal network may communicate between each other, but not
+with any other network, as no default route is configured and firewall rules
+are set up to drop all traffic to or from other networks. Communication with
+the gateway IP  address (and thus appropriately configured host services) is
+possible, and the host may communicate with any container IP directly.
 
 By default, when you connect a container to an `overlay` network, Docker also
 connects a bridge network to it to provide external connectivity. If you want
@@ -207,7 +216,7 @@ $ docker network create -d overlay \
 
 ### Run services on predefined networks
 
-You can create services on the predefined docker networks `bridge` and `host`.
+You can create services on the predefined Docker networks `bridge` and `host`.
 
 ```console
 $ docker service create --name my-service \

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/docker/cli/internal/test"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/errdefs"
 	"github.com/pkg/errors"
 	"gotest.tools/v3/assert"
@@ -62,7 +63,6 @@ func TestNetworkRemoveForce(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.doc, func(t *testing.T) {
 			fakeCli := test.NewFakeCli(&fakeClient{
 				networkRemoveFunc: func(ctx context.Context, networkID string) error {
@@ -89,9 +89,31 @@ func TestNetworkRemoveForce(t *testing.T) {
 				assert.NilError(t, err)
 			} else {
 				assert.Check(t, is.Contains(fakeCli.ErrBuffer().String(), tc.expectedErr))
-				assert.ErrorContains(t, err, "Code: 1")
-
+				assert.ErrorContains(t, err, "exit status 1")
 			}
 		})
 	}
+}
+
+func TestNetworkRemovePromptTermination(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cli := test.NewFakeCli(&fakeClient{
+		networkRemoveFunc: func(ctx context.Context, networkID string) error {
+			return errors.New("fakeClient networkRemoveFunc should not be called")
+		},
+		networkInspectFunc: func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, []byte, error) {
+			return network.Inspect{
+				ID:      "existing-network",
+				Name:    "existing-network",
+				Ingress: true,
+			}, nil, nil
+		},
+	})
+	cmd := newRemoveCommand(cli)
+	cmd.SetArgs([]string{"existing-network"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	test.TerminatePrompt(ctx, t, cmd, cli)
 }

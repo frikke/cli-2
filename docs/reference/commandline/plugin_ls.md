@@ -13,8 +13,8 @@ List plugins
 |:---------------------------------------|:---------|:--------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | [`-f`](#filter), [`--filter`](#filter) | `filter` |         | Provide filter values (e.g. `enabled=true`)                                                                                                                                                                                                                                                                                                                                                                                          |
 | [`--format`](#format)                  | `string` |         | Format output using a custom template:<br>'table':            Print output in table format with column headers (default)<br>'table TEMPLATE':   Print output in table format using the given Go template<br>'json':             Print in JSON format<br>'TEMPLATE':         Print output using the given Go template.<br>Refer to https://docs.docker.com/go/formatting/ for more information about formatting output with templates |
-| `--no-trunc`                           |          |         | Don't truncate output                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `-q`, `--quiet`                        |          |         | Only display plugin IDs                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `--no-trunc`                           | `bool`   |         | Don't truncate output                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `-q`, `--quiet`                        | `bool`   |         | Only display plugin IDs                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 
 <!---MARKER_GEN_END-->
@@ -38,7 +38,7 @@ ID            NAME                                    DESCRIPTION               
 ### <a name="filter"></a> Filtering (--filter)
 
 The filtering flag (`-f` or `--filter`) format is of "key=value". If there is more
-than one filter, then pass multiple flags (e.g., `--filter "foo=bar" --filter "bif=baz"`)
+than one filter, then pass multiple flags (e.g., `--filter "foo=bar" --filter "bif=baz"`).
 
 The currently supported filters are:
 

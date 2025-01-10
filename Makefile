@@ -52,7 +52,7 @@ shellcheck: ## run shellcheck validation
 .PHONY: fmt
 fmt: ## run gofumpt (if present) or gofmt
 	@if command -v gofumpt > /dev/null; then \
-		gofumpt -w -d -lang=1.19 . ; \
+		gofumpt -w -d -lang=1.23 . ; \
 	else \
 		go list -f {{.Dir}} ./... | xargs gofmt -w -s -d ; \
 	fi
@@ -85,6 +85,16 @@ mod-outdated: ## check outdated dependencies
 .PHONY: authors
 authors: ## generate AUTHORS file from git history
 	scripts/docs/generate-authors.sh
+
+.PHONY: completion
+completion: binary
+completion: /etc/bash_completion.d/docker
+completion: ## generate and install the completion scripts
+
+.PHONY: /etc/bash_completion.d/docker
+/etc/bash_completion.d/docker: ## generate and install the bash-completion script
+	mkdir -p /etc/bash_completion.d
+	docker completion bash > /etc/bash_completion.d/docker
 
 .PHONY: manpages
 manpages: ## generate man pages from go source and markdown

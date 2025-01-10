@@ -12,9 +12,11 @@ Deploy a new stack or update an existing stack
 | Name                                                     | Type          | Default  | Description                                                                                       |
 |:---------------------------------------------------------|:--------------|:---------|:--------------------------------------------------------------------------------------------------|
 | [`-c`](#compose-file), [`--compose-file`](#compose-file) | `stringSlice` |          | Path to a Compose file, or `-` to read from stdin                                                 |
-| `--prune`                                                |               |          | Prune services that are no longer referenced                                                      |
+| `-d`, `--detach`                                         | `bool`        | `true`   | Exit immediately instead of waiting for the stack services to converge                            |
+| `--prune`                                                | `bool`        |          | Prune services that are no longer referenced                                                      |
+| `-q`, `--quiet`                                          | `bool`        |          | Suppress progress output                                                                          |
 | `--resolve-image`                                        | `string`      | `always` | Query the registry to resolve image digest and supported platforms (`always`, `changed`, `never`) |
-| `--with-registry-auth`                                   |               |          | Send registry authentication details to Swarm agents                                              |
+| `--with-registry-auth`                                   | `bool`        |          | Send registry authentication details to Swarm agents                                              |
 
 
 <!---MARKER_GEN_END-->
@@ -23,8 +25,7 @@ Deploy a new stack or update an existing stack
 
 Create and update a stack from a `compose` file on the swarm.
 
-> **Note**
->
+> [!NOTE]
 > This is a cluster management command, and must be executed on a swarm
 > manager node. To learn about managers and workers, refer to the
 > [Swarm mode section](https://docs.docker.com/engine/swarm/) in the
@@ -34,7 +35,7 @@ Create and update a stack from a `compose` file on the swarm.
 
 ### <a name="compose-file"></a> Compose file (--compose-file)
 
-The `deploy` command supports compose file version `3.0` and above.
+The `deploy` command supports Compose file version `3.0` and above.
 
 ```console
 $ docker stack deploy --compose-file docker-compose.yml vossibility

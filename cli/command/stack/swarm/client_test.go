@@ -8,6 +8,7 @@ import (
 	"github.com/docker/docker/api"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
 )
@@ -28,14 +29,14 @@ type fakeClient struct {
 	removedConfigs  []string
 
 	serviceListFunc    func(options types.ServiceListOptions) ([]swarm.Service, error)
-	networkListFunc    func(options types.NetworkListOptions) ([]types.NetworkResource, error)
+	networkListFunc    func(options network.ListOptions) ([]network.Summary, error)
 	secretListFunc     func(options types.SecretListOptions) ([]swarm.Secret, error)
 	configListFunc     func(options types.ConfigListOptions) ([]swarm.Config, error)
 	nodeListFunc       func(options types.NodeListOptions) ([]swarm.Node, error)
 	taskListFunc       func(options types.TaskListOptions) ([]swarm.Task, error)
 	nodeInspectWithRaw func(ref string) (swarm.Node, []byte, error)
 
-	serviceUpdateFunc func(serviceID string, version swarm.Version, service swarm.ServiceSpec, options types.ServiceUpdateOptions) (types.ServiceUpdateResponse, error)
+	serviceUpdateFunc func(serviceID string, version swarm.Version, service swarm.ServiceSpec, options types.ServiceUpdateOptions) (swarm.ServiceUpdateResponse, error)
 
 	serviceRemoveFunc func(serviceID string) error
 	networkRemoveFunc func(networkID string) error
@@ -69,13 +70,13 @@ func (cli *fakeClient) ServiceList(_ context.Context, options types.ServiceListO
 	return servicesList, nil
 }
 
-func (cli *fakeClient) NetworkList(_ context.Context, options types.NetworkListOptions) ([]types.NetworkResource, error) {
+func (cli *fakeClient) NetworkList(_ context.Context, options network.ListOptions) ([]network.Summary, error) {
 	if cli.networkListFunc != nil {
 		return cli.networkListFunc(options)
 	}
 
 	namespace := namespaceFromFilters(options.Filters)
-	networksList := []types.NetworkResource{}
+	networksList := []network.Summary{}
 	for _, name := range cli.networks {
 		if belongToNamespace(name, namespace) {
 			networksList = append(networksList, networkFromName(name))
@@ -135,12 +136,12 @@ func (cli *fakeClient) NodeInspectWithRaw(_ context.Context, ref string) (swarm.
 	return swarm.Node{}, nil, nil
 }
 
-func (cli *fakeClient) ServiceUpdate(_ context.Context, serviceID string, version swarm.Version, service swarm.ServiceSpec, options types.ServiceUpdateOptions) (types.ServiceUpdateResponse, error) {
+func (cli *fakeClient) ServiceUpdate(_ context.Context, serviceID string, version swarm.Version, service swarm.ServiceSpec, options types.ServiceUpdateOptions) (swarm.ServiceUpdateResponse, error) {
 	if cli.serviceUpdateFunc != nil {
 		return cli.serviceUpdateFunc(serviceID, version, service, options)
 	}
 
-	return types.ServiceUpdateResponse{}, nil
+	return swarm.ServiceUpdateResponse{}, nil
 }
 
 func (cli *fakeClient) ServiceRemove(_ context.Context, serviceID string) error {
@@ -188,8 +189,8 @@ func serviceFromName(name string) swarm.Service {
 	}
 }
 
-func networkFromName(name string) types.NetworkResource {
-	return types.NetworkResource{
+func networkFromName(name string) network.Summary {
+	return network.Summary{
 		ID:   "ID-" + name,
 		Name: name,
 	}
@@ -213,8 +214,8 @@ func configFromName(name string) swarm.Config {
 	}
 }
 
-func namespaceFromFilters(filters filters.Args) string {
-	label := filters.Get("label")[0]
+func namespaceFromFilters(fltrs filters.Args) string {
+	label := fltrs.Get("label")[0]
 	return strings.TrimPrefix(label, convert.LabelNamespace+"=")
 }
 

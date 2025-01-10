@@ -18,18 +18,18 @@ init() {
   cat > go.mod <<EOL
 module github.com/docker/cli
 
-go 1.18
+go 1.22.0
 EOL
 }
 
 update() {
-  (set -x ; go mod tidy -compat=1.18 -modfile=vendor.mod; go mod vendor -modfile=vendor.mod)
+  (set -x ; go mod tidy -modfile=vendor.mod; go mod vendor -modfile=vendor.mod)
 }
 
 validate() {
   diff=$(git status --porcelain -- vendor.mod vendor.sum vendor)
   if [ -n "$diff" ]; then
-    echo >&2 'ERROR: Vendor result differs. Please vendor your package with "make -f docker.Makefile vendor"'
+    echo >&2 'ERROR: Vendor result differs. Vendor your package with "make -f docker.Makefile vendor"'
     echo "$diff"
     exit 1
   fi

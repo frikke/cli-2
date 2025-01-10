@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/docker/cli/internal/test"
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/api/types/system"
 	"github.com/pkg/errors"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
@@ -18,17 +18,17 @@ func TestSwarmJoinErrors(t *testing.T) {
 		name          string
 		args          []string
 		swarmJoinFunc func() error
-		infoFunc      func() (types.Info, error)
+		infoFunc      func() (system.Info, error)
 		expectedError string
 	}{
 		{
 			name:          "not-enough-args",
-			expectedError: "requires exactly 1 argument",
+			expectedError: "requires 1 argument",
 		},
 		{
 			name:          "too-many-args",
 			args:          []string{"remote1", "remote2"},
-			expectedError: "requires exactly 1 argument",
+			expectedError: "requires 1 argument",
 		},
 		{
 			name: "join-failed",
@@ -41,34 +41,37 @@ func TestSwarmJoinErrors(t *testing.T) {
 		{
 			name: "join-failed-on-init",
 			args: []string{"remote"},
-			infoFunc: func() (types.Info, error) {
-				return types.Info{}, errors.Errorf("error asking for node info")
+			infoFunc: func() (system.Info, error) {
+				return system.Info{}, errors.Errorf("error asking for node info")
 			},
 			expectedError: "error asking for node info",
 		},
 	}
 	for _, tc := range testCases {
-		cmd := newJoinCommand(
-			test.NewFakeCli(&fakeClient{
-				swarmJoinFunc: tc.swarmJoinFunc,
-				infoFunc:      tc.infoFunc,
-			}))
-		cmd.SetArgs(tc.args)
-		cmd.SetOut(io.Discard)
-		assert.ErrorContains(t, cmd.Execute(), tc.expectedError)
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := newJoinCommand(
+				test.NewFakeCli(&fakeClient{
+					swarmJoinFunc: tc.swarmJoinFunc,
+					infoFunc:      tc.infoFunc,
+				}))
+			cmd.SetArgs(tc.args)
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			assert.ErrorContains(t, cmd.Execute(), tc.expectedError)
+		})
 	}
 }
 
 func TestSwarmJoin(t *testing.T) {
 	testCases := []struct {
 		name     string
-		infoFunc func() (types.Info, error)
+		infoFunc func() (system.Info, error)
 		expected string
 	}{
 		{
 			name: "join-as-manager",
-			infoFunc: func() (types.Info, error) {
-				return types.Info{
+			infoFunc: func() (system.Info, error) {
+				return system.Info{
 					Swarm: swarm.Info{
 						ControlAvailable: true,
 					},
@@ -78,8 +81,8 @@ func TestSwarmJoin(t *testing.T) {
 		},
 		{
 			name: "join-as-worker",
-			infoFunc: func() (types.Info, error) {
-				return types.Info{
+			infoFunc: func() (system.Info, error) {
+				return system.Info{
 					Swarm: swarm.Info{
 						ControlAvailable: false,
 					},
@@ -89,12 +92,14 @@ func TestSwarmJoin(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		cli := test.NewFakeCli(&fakeClient{
-			infoFunc: tc.infoFunc,
+		t.Run(tc.name, func(t *testing.T) {
+			cli := test.NewFakeCli(&fakeClient{
+				infoFunc: tc.infoFunc,
+			})
+			cmd := newJoinCommand(cli)
+			cmd.SetArgs([]string{"remote"})
+			assert.NilError(t, cmd.Execute())
+			assert.Check(t, is.Equal(strings.TrimSpace(cli.OutBuffer().String()), tc.expected))
 		})
-		cmd := newJoinCommand(cli)
-		cmd.SetArgs([]string{"remote"})
-		assert.NilError(t, cmd.Execute())
-		assert.Check(t, is.Equal(strings.TrimSpace(cli.OutBuffer().String()), tc.expected))
 	}
 }

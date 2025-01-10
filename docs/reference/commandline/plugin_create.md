@@ -5,17 +5,17 @@ Create a plugin from a rootfs and configuration. Plugin data directory must cont
 
 ### Options
 
-| Name         | Type | Default | Description                     |
-|:-------------|:-----|:--------|:--------------------------------|
-| `--compress` |      |         | Compress the context using gzip |
+| Name         | Type   | Default | Description                     |
+|:-------------|:-------|:--------|:--------------------------------|
+| `--compress` | `bool` |         | Compress the context using gzip |
 
 
 <!---MARKER_GEN_END-->
 
 ## Description
 
-Creates a plugin. Before creating the plugin, prepare the plugin's root filesystem as well as
-[the config.json](../../extend/config.md)
+Creates a plugin. Before creating the plugin, prepare the plugin's root
+filesystem as well as the [config.json](https://docs.docker.com/engine/extend/config/).
 
 ## Examples
 

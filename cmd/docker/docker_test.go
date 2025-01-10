@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"testing"
@@ -15,8 +16,10 @@ import (
 
 func TestClientDebugEnabled(t *testing.T) {
 	defer debug.Disable()
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
 
-	cli, err := command.NewDockerCli()
+	cli, err := command.NewDockerCli(command.WithBaseContext(ctx))
 	assert.NilError(t, err)
 	tcmd := newDockerCommand(cli)
 	tcmd.SetFlag("debug", "true")
@@ -39,7 +42,13 @@ func runCliCommand(t *testing.T, r io.ReadCloser, w io.Writer, args ...string) e
 	if w == nil {
 		w = io.Discard
 	}
-	cli, err := command.NewDockerCli(command.WithInputStream(r), command.WithCombinedStreams(w))
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
+
+	cli, err := command.NewDockerCli(
+		command.WithBaseContext(ctx),
+		command.WithInputStream(r),
+		command.WithCombinedStreams(w))
 	assert.NilError(t, err)
 	tcmd := newDockerCommand(cli)
 
@@ -57,7 +66,7 @@ func TestExitStatusForInvalidSubcommandWithHelpFlag(t *testing.T) {
 
 func TestExitStatusForInvalidSubcommand(t *testing.T) {
 	err := runCliCommand(t, nil, nil, "invalid")
-	assert.Check(t, is.ErrorContains(err, "docker: 'invalid' is not a docker command."))
+	assert.Check(t, is.ErrorContains(err, "docker: unknown command: docker invalid"))
 }
 
 func TestVersion(t *testing.T) {

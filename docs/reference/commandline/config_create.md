@@ -19,9 +19,8 @@ Creates a config using standard input or from a file for the config content.
 
 For detailed information about using configs, refer to [store configuration data using Docker Configs](https://docs.docker.com/engine/swarm/configs/).
 
-> **Note**
->
-> This is a cluster management command, and must be executed on a swarm
+> [!NOTE]
+> This is a cluster management command, and must be executed on a Swarm
 > manager node. To learn about managers and workers, refer to the
 > [Swarm mode section](https://docs.docker.com/engine/swarm/) in the
 > documentation.
@@ -87,7 +86,6 @@ $ docker config inspect my_config
     }
 ]
 ```
-
 
 ## Related commands
 

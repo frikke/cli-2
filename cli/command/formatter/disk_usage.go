@@ -7,8 +7,10 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/docker/distribution/reference"
+	"github.com/distribution/reference"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/volume"
 	units "github.com/docker/go-units"
 )
@@ -34,8 +36,8 @@ type DiskUsageContext struct {
 	Context
 	Verbose     bool
 	LayersSize  int64
-	Images      []*types.ImageSummary
-	Containers  []*types.Container
+	Images      []*image.Summary
+	Containers  []*container.Summary
 	Volumes     []*volume.Volume
 	BuildCache  []*types.BuildCache
 	BuilderSize int64
@@ -123,7 +125,7 @@ func (ctx *DiskUsageContext) Write() (err error) {
 		return err
 	}
 
-	diskUsageContainersCtx := diskUsageContainersContext{containers: []*types.Container{}}
+	diskUsageContainersCtx := diskUsageContainersContext{containers: []*container.Summary{}}
 	diskUsageContainersCtx.Header = SubHeaderContext{
 		"Type":        typeHeader,
 		"TotalCount":  totalHeader,
@@ -261,7 +263,7 @@ func (ctx *DiskUsageContext) verboseWriteTable(duc *diskUsageContext) error {
 type diskUsageImagesContext struct {
 	HeaderContext
 	totalSize int64
-	images    []*types.ImageSummary
+	images    []*image.Summary
 }
 
 func (c *diskUsageImagesContext) MarshalJSON() ([]byte, error) {
@@ -312,7 +314,7 @@ func (c *diskUsageImagesContext) Reclaimable() string {
 
 type diskUsageContainersContext struct {
 	HeaderContext
-	containers []*types.Container
+	containers []*container.Summary
 }
 
 func (c *diskUsageContainersContext) MarshalJSON() ([]byte, error) {
@@ -327,16 +329,16 @@ func (c *diskUsageContainersContext) TotalCount() string {
 	return strconv.Itoa(len(c.containers))
 }
 
-func (c *diskUsageContainersContext) isActive(container types.Container) bool {
-	return strings.Contains(container.State, "running") ||
-		strings.Contains(container.State, "paused") ||
-		strings.Contains(container.State, "restarting")
+func (c *diskUsageContainersContext) isActive(ctr container.Summary) bool {
+	return strings.Contains(ctr.State, "running") ||
+		strings.Contains(ctr.State, "paused") ||
+		strings.Contains(ctr.State, "restarting")
 }
 
 func (c *diskUsageContainersContext) Active() string {
 	used := 0
-	for _, container := range c.containers {
-		if c.isActive(*container) {
+	for _, ctr := range c.containers {
+		if c.isActive(*ctr) {
 			used++
 		}
 	}
@@ -347,22 +349,21 @@ func (c *diskUsageContainersContext) Active() string {
 func (c *diskUsageContainersContext) Size() string {
 	var size int64
 
-	for _, container := range c.containers {
-		size += container.SizeRw
+	for _, ctr := range c.containers {
+		size += ctr.SizeRw
 	}
 
 	return units.HumanSize(float64(size))
 }
 
 func (c *diskUsageContainersContext) Reclaimable() string {
-	var reclaimable int64
-	var totalSize int64
+	var reclaimable, totalSize int64
 
-	for _, container := range c.containers {
-		if !c.isActive(*container) {
-			reclaimable += container.SizeRw
+	for _, ctr := range c.containers {
+		if !c.isActive(*ctr) {
+			reclaimable += ctr.SizeRw
 		}
-		totalSize += container.SizeRw
+		totalSize += ctr.SizeRw
 	}
 
 	if totalSize > 0 {

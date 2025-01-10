@@ -18,7 +18,7 @@ func newRemoveCommand(dockerCli command.Cli) *cobra.Command {
 		Short:   "Remove one or more services",
 		Args:    cli.RequiresMinArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRemove(dockerCli, args)
+			return runRemove(cmd.Context(), dockerCli, args)
 		},
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return CompletionFn(dockerCli)(cmd, args, toComplete)
@@ -29,10 +29,8 @@ func newRemoveCommand(dockerCli command.Cli) *cobra.Command {
 	return cmd
 }
 
-func runRemove(dockerCli command.Cli, sids []string) error {
+func runRemove(ctx context.Context, dockerCli command.Cli, sids []string) error {
 	client := dockerCli.Client()
-
-	ctx := context.Background()
 
 	var errs []string
 	for _, sid := range sids {
@@ -41,10 +39,10 @@ func runRemove(dockerCli command.Cli, sids []string) error {
 			errs = append(errs, err.Error())
 			continue
 		}
-		fmt.Fprintf(dockerCli.Out(), "%s\n", sid)
+		_, _ = fmt.Fprintf(dockerCli.Out(), "%s\n", sid)
 	}
 	if len(errs) > 0 {
-		return errors.Errorf(strings.Join(errs, "\n"))
+		return errors.New(strings.Join(errs, "\n"))
 	}
 	return nil
 }
