@@ -26,7 +26,7 @@ func NewWaitCommand(dockerCli command.Cli) *cobra.Command {
 		Args:  cli.RequiresMinArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.containers = args
-			return runWait(dockerCli, &opts)
+			return runWait(cmd.Context(), dockerCli, &opts)
 		},
 		Annotations: map[string]string{
 			"aliases": "docker container wait, docker wait",
@@ -37,16 +37,14 @@ func NewWaitCommand(dockerCli command.Cli) *cobra.Command {
 	return cmd
 }
 
-func runWait(dockerCli command.Cli, opts *waitOptions) error {
-	ctx := context.Background()
-
+func runWait(ctx context.Context, dockerCli command.Cli, opts *waitOptions) error {
 	var errs []string
-	for _, container := range opts.containers {
-		resultC, errC := dockerCli.Client().ContainerWait(ctx, container, "")
+	for _, ctr := range opts.containers {
+		resultC, errC := dockerCli.Client().ContainerWait(ctx, ctr, "")
 
 		select {
 		case result := <-resultC:
-			fmt.Fprintf(dockerCli.Out(), "%d\n", result.StatusCode)
+			_, _ = fmt.Fprintf(dockerCli.Out(), "%d\n", result.StatusCode)
 		case err := <-errC:
 			errs = append(errs, err.Error())
 		}

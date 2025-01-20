@@ -27,17 +27,17 @@ Docker Engine uses the `:latest` tag as a default. This example pulls the
 Docker images can consist of multiple layers. In the example above, the image
 consists of a single layer; `e756f3fdd6a3`.
 
-Layers can be reused by images. For example, the `debian:bullseye` image shares
-its layer with the `debian:latest`. Pulling the `debian:bullseye` image therefore
+Layers can be reused by images. For example, the `debian:bookworm` image shares
+its layer with the `debian:latest`. Pulling the `debian:bookworm` image therefore
 only pulls its metadata, but not its layers, because the layer is already present
 locally:
 
-    $ docker image pull debian:bullseye
+    $ docker image pull debian:bookworm
 
-    bullseye: Pulling from library/debian
+    bookworm: Pulling from library/debian
     Digest: sha256:3f1d6c17773a45c97bd8f158d665c9709d7b29ed7917ac934086ad96f92e4510
-    Status: Downloaded newer image for debian:bullseye
-    docker.io/library/debian:bullseye
+    Status: Downloaded newer image for debian:bookworm
+    docker.io/library/debian:bookworm
 
 To see which images are present locally, use the **docker-images(1)**
 command:
@@ -45,12 +45,12 @@ command:
     $ docker images
 
     REPOSITORY   TAG        IMAGE ID       CREATED        SIZE
-    debian       bullseye   4eacea30377a   8 days ago     124MB
+    debian       bookworm   4eacea30377a   8 days ago     124MB
     debian       latest     4eacea30377a   8 days ago     124MB
 
 Docker uses a content-addressable image store, and the image ID is a SHA256
 digest covering the image's configuration and layers. In the example above,
-`debian:bullseye` and `debian:latest` have the same image ID because they are
+`debian:bookworm` and `debian:latest` have the same image ID because they are
 the *same* image tagged with different names. Because they are the same image,
 their layers are stored only once and do not consume extra disk space.
 
@@ -64,8 +64,8 @@ in the online documentation.
 So far, you've pulled images by their name (and "tag"). Using names and tags is
 a convenient way to work with images. When using tags, you can `docker image pull` an
 image again to make sure you have the most up-to-date version of that image.
-For example, `docker image pull ubuntu:22.04` pulls the latest version of the Ubuntu
-22.04 image.
+For example, `docker image pull ubuntu:24.04` pulls the latest version of the Ubuntu
+24.04 image.
 
 In some cases you don't want images to be updated to newer versions, but prefer
 to use a fixed version of an image. Docker enables you to pull an image by its
@@ -74,20 +74,20 @@ of an image to pull. Doing so, allows you to "pin" an image to that version,
 and guarantee that the image you're using is always the same.
 
 To know the digest of an image, pull the image first. Let's pull the latest
-`ubuntu:22.04` image from Docker Hub:
+`ubuntu:24.04` image from Docker Hub:
 
-    $ docker image pull ubuntu:22.04
+    $ docker image pull ubuntu:24.04
 
-    22.04: Pulling from library/ubuntu
+    24.04: Pulling from library/ubuntu
     125a6e411906: Pull complete
-    Digest: sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d
-    Status: Downloaded newer image for ubuntu:22.04
-    docker.io/library/ubuntu:22.04
+    Digest: sha256:2e863c44b718727c860746568e1d54afd13b2fa71b160f5cd9058fc436217b30
+    Status: Downloaded newer image for ubuntu:24.04
+    docker.io/library/ubuntu:24.04
 
 Docker prints the digest of the image after the pull has finished. In the example
 above, the digest of the image is:
 
-    sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d
+    sha256:2e863c44b718727c860746568e1d54afd13b2fa71b160f5cd9058fc436217b30
 
 Docker also prints the digest of an image when *pushing* to a registry. This
 may be useful if you want to pin to a version of the image you just pushed.
@@ -95,16 +95,16 @@ may be useful if you want to pin to a version of the image you just pushed.
 A digest takes the place of the tag when pulling an image, for example, to
 pull the above image by digest, run the following command:
 
-    $ docker image pull ubuntu@sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d
+    $ docker image pull ubuntu@sha256:2e863c44b718727c860746568e1d54afd13b2fa71b160f5cd9058fc436217b30
 
-    docker.io/library/ubuntu@sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d: Pulling from library/ubuntu
-    Digest: sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d
-    Status: Image is up to date for ubuntu@sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d
-    docker.io/library/ubuntu@sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d
+    docker.io/library/ubuntu@sha256:2e863c44b718727c860746568e1d54afd13b2fa71b160f5cd9058fc436217b30: Pulling from library/ubuntu
+    Digest: sha256:2e863c44b718727c860746568e1d54afd13b2fa71b160f5cd9058fc436217b30
+    Status: Image is up to date for ubuntu@sha256:2e863c44b718727c860746568e1d54afd13b2fa71b160f5cd9058fc436217b30
+    docker.io/library/ubuntu@sha256:2e863c44b718727c860746568e1d54afd13b2fa71b160f5cd9058fc436217b30
 
 Digest can also be used in the `FROM` of a Dockerfile, for example:
 
-    FROM ubuntu@sha256:26c68657ccce2cb0a31b330cb0be2b5e108d467f641c62e13ab40cbec258c68d
+    FROM ubuntu@sha256:2e863c44b718727c860746568e1d54afd13b2fa71b160f5cd9058fc436217b30
     LABEL org.opencontainers.image.authors="some maintainer <maintainer@example.com>"
 
 > **Note**
@@ -159,14 +159,11 @@ images that are present locally:
 
     $ docker image ls --filter reference=ubuntu
     REPOSITORY   TAG       IMAGE ID       CREATED        SIZE
-    ubuntu       18.04     c6ad7e71ba7d   5 weeks ago    63.2MB
-    ubuntu       bionic    c6ad7e71ba7d   5 weeks ago    63.2MB
-    ubuntu       22.04     5ccefbfc0416   2 months ago   78MB
-    ubuntu       focal     ff0fea8310f3   2 months ago   72.8MB
-    ubuntu       latest    ff0fea8310f3   2 months ago   72.8MB
-    ubuntu       jammy     41ba606c8ab9   3 months ago   79MB
-    ubuntu       20.04     ba6acccedd29   7 months ago   72.8MB
-    ...
+    ubuntu       22.04     8a3cdc4d1ad3   3 weeks ago    77.9MB
+    ubuntu       jammy     8a3cdc4d1ad3   3 weeks ago    77.9MB
+    ubuntu       24.04     35a88802559d   6 weeks ago    78.1MB
+    ubuntu       latest    35a88802559d   6 weeks ago    78.1MB
+    ubuntu       noble     35a88802559d   6 weeks ago    78.1MB
 
 ## Cancel a pull
 

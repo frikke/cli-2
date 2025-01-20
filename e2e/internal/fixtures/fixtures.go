@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/docker/cli/cli/config"
 	"gotest.tools/v3/fs"
 	"gotest.tools/v3/icmd"
 )
@@ -17,11 +18,11 @@ const (
 	// AlpineImage is an image in the test registry
 	AlpineImage = "registry:5000/alpine:frozen"
 	// AlpineSha is the sha of the alpine image
-	AlpineSha = "e2e16842c9b54d985bf1ef9242a313f36b856181f188de21313820e177002501"
+	AlpineSha = "e2e16842c9b54d985bf1ef9242a313f36b856181f188de21313820e177002501" // #nosec G101 -- ignoring: Potential hardcoded credentials (gosec)
 	// BusyboxImage is an image in the test registry
 	BusyboxImage = "registry:5000/busybox:frozen"
 	// BusyboxSha is the sha of the busybox image
-	BusyboxSha = "030fcb92e1487b18c974784dcc110a93147c9fc402188370fbfd17efabffc6af"
+	BusyboxSha = "030fcb92e1487b18c974784dcc110a93147c9fc402188370fbfd17efabffc6af" // #nosec G101 -- ignoring: Potential hardcoded credentials (gosec)
 )
 
 // SetupConfigFile creates a config.json file for testing
@@ -53,7 +54,7 @@ func SetupConfigWithNotaryURL(t *testing.T, path, notaryURL string) fs.Dir {
 // WithConfig sets an environment variable for the docker config location
 func WithConfig(dir string) func(cmd *icmd.Cmd) {
 	return func(cmd *icmd.Cmd) {
-		addEnvs(cmd, "DOCKER_CONFIG="+dir)
+		addEnvs(cmd, config.EnvOverrideConfigDir+"="+dir)
 	}
 }
 

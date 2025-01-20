@@ -8,7 +8,7 @@ Display detailed information on one or more networks
 | Name                                      | Type     | Default | Description                                                                                                                                                                                                                                                        |
 |:------------------------------------------|:---------|:--------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `-f`, `--format`                          | `string` |         | Format output using a custom template:<br>'json':             Print in JSON format<br>'TEMPLATE':         Print output using the given Go template.<br>Refer to https://docs.docker.com/go/formatting/ for more information about formatting output with templates |
-| [`-v`](#verbose), [`--verbose`](#verbose) |          |         | Verbose output for diagnostics                                                                                                                                                                                                                                     |
+| [`-v`](#verbose), [`--verbose`](#verbose) | `bool`   |         | Verbose output for diagnostics                                                                                                                                                                                                                                     |
 
 
 <!---MARKER_GEN_END-->
@@ -41,7 +41,7 @@ node are shown.
 
 You can specify an alternate format to execute a given
 template for each result. Go's
-[text/template](https://golang.org/pkg/text/template/) package describes all the
+[text/template](https://pkg.go.dev/text/template) package describes all the
 details of the format.
 
 ```console

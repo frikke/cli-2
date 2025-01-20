@@ -32,12 +32,12 @@ func TestTrustSignCommandErrors(t *testing.T) {
 	}{
 		{
 			name:          "not-enough-args",
-			expectedError: "requires exactly 1 argument",
+			expectedError: "requires 1 argument",
 		},
 		{
 			name:          "too-many-args",
 			args:          []string{"image", "tag"},
-			expectedError: "requires exactly 1 argument",
+			expectedError: "requires 1 argument",
 		},
 		{
 			name:          "sha-reference",
@@ -67,6 +67,7 @@ func TestTrustSignCommandErrors(t *testing.T) {
 			test.NewFakeCli(&fakeClient{}))
 		cmd.SetArgs(tc.args)
 		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
 		assert.ErrorContains(t, cmd.Execute(), tc.expectedError)
 	}
 }
@@ -77,6 +78,7 @@ func TestTrustSignCommandOfflineErrors(t *testing.T) {
 	cmd := newSignCommand(cli)
 	cmd.SetArgs([]string{"reg-name.io/image:tag"})
 	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
 	assert.ErrorContains(t, cmd.Execute(), "client is offline")
 }
 
@@ -207,8 +209,7 @@ func TestAddStageSigners(t *testing.T) {
 func TestGetSignedManifestHashAndSize(t *testing.T) {
 	notaryRepo, err := client.NewFileCachedRepository(t.TempDir(), "gun", "https://localhost", nil, passphrase.ConstantRetriever(passwd), trustpinning.TrustPinConfig{})
 	assert.NilError(t, err)
-	target := &client.Target{}
-	target.Hashes, target.Length, err = getSignedManifestHashAndSize(notaryRepo, "test")
+	_, _, err = getSignedManifestHashAndSize(notaryRepo, "test")
 	assert.Error(t, err, "client is offline")
 }
 
@@ -261,6 +262,7 @@ func TestSignCommandChangeListIsCleanedOnError(t *testing.T) {
 	cmd := newSignCommand(cli)
 	cmd.SetArgs([]string{"ubuntu:latest"})
 	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
 
 	err := cmd.Execute()
 	assert.Assert(t, err != nil)
@@ -278,5 +280,6 @@ func TestSignCommandLocalFlag(t *testing.T) {
 	cmd := newSignCommand(cli)
 	cmd.SetArgs([]string{"--local", "reg-name.io/image:red"})
 	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
 	assert.ErrorContains(t, cmd.Execute(), "error contacting notary server: dial tcp: lookup reg-name.io")
 }

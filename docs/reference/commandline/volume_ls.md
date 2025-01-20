@@ -11,10 +11,10 @@ List volumes
 
 | Name                                   | Type     | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                          |
 |:---------------------------------------|:---------|:--------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `--cluster`                            |          |         | Display only cluster volumes, and use cluster volume list formatting                                                                                                                                                                                                                                                                                                                                                                 |
+| `--cluster`                            | `bool`   |         | Display only cluster volumes, and use cluster volume list formatting                                                                                                                                                                                                                                                                                                                                                                 |
 | [`-f`](#filter), [`--filter`](#filter) | `filter` |         | Provide filter values (e.g. `dangling=true`)                                                                                                                                                                                                                                                                                                                                                                                         |
 | [`--format`](#format)                  | `string` |         | Format output using a custom template:<br>'table':            Print output in table format with column headers (default)<br>'table TEMPLATE':   Print output in table format using the given Go template<br>'json':             Print in JSON format<br>'TEMPLATE':         Print output using the given Go template.<br>Refer to https://docs.docker.com/go/formatting/ for more information about formatting output with templates |
-| `-q`, `--quiet`                        |          |         | Only display volume names                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `-q`, `--quiet`                        | `bool`   |         | Only display volume names                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 
 <!---MARKER_GEN_END-->
@@ -52,7 +52,7 @@ than one filter, then pass multiple flags (e.g., `--filter "foo=bar" --filter "b
 
 The currently supported filters are:
 
-- dangling (boolean - true or false, 0 or 1)
+- dangling (Boolean - true or false, 0 or 1)
 - driver (a volume driver's name)
 - label (`label=<key>` or `label=<key>=<value>`)
 - name (a volume's name)
@@ -89,7 +89,7 @@ local               tyler
 The `label` filter matches volumes based on the presence of a `label` alone or
 a `label` and a value.
 
-First, let's create some volumes to illustrate this;
+First, create some volumes to illustrate this;
 
 ```console
 $ docker volume create the-doctor --label is-timelord=yes

@@ -1,6 +1,7 @@
 package trust
 
 import (
+	"context"
 	"io"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/theupdateframework/notary/trustpinning"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
+	"gotest.tools/v3/golden"
 )
 
 func TestTrustRevokeCommandErrors(t *testing.T) {
@@ -22,12 +24,12 @@ func TestTrustRevokeCommandErrors(t *testing.T) {
 	}{
 		{
 			name:          "not-enough-args",
-			expectedError: "requires exactly 1 argument",
+			expectedError: "requires 1 argument",
 		},
 		{
 			name:          "too-many-args",
 			args:          []string{"remote1", "remote2"},
-			expectedError: "requires exactly 1 argument",
+			expectedError: "requires 1 argument",
 		},
 		{
 			name:          "sha-reference",
@@ -50,11 +52,14 @@ func TestTrustRevokeCommandErrors(t *testing.T) {
 			test.NewFakeCli(&fakeClient{}))
 		cmd.SetArgs(tc.args)
 		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
 		assert.ErrorContains(t, cmd.Execute(), tc.expectedError)
 	}
 }
 
 func TestTrustRevokeCommand(t *testing.T) {
+	revokeCancelledError := "trust revoke has been cancelled"
+
 	testCases := []struct {
 		doc              string
 		notaryRepository func(trust.ImageRefAndAuth, []string) (client.Repository, error)
@@ -66,7 +71,8 @@ func TestTrustRevokeCommand(t *testing.T) {
 			doc:              "OfflineErrors_Confirm",
 			notaryRepository: notary.GetOfflineNotaryRepository,
 			args:             []string{"reg-name.io/image"},
-			expectedMessage:  "Please confirm you would like to delete all signature data for reg-name.io/image? [y/N] \nAborting action.",
+			expectedMessage:  "Confirm you would like to delete all signature data for reg-name.io/image? [y/N] ",
+			expectedErr:      revokeCancelledError,
 		},
 		{
 			doc:              "OfflineErrors_Offline",
@@ -84,7 +90,8 @@ func TestTrustRevokeCommand(t *testing.T) {
 			doc:              "UninitializedErrors_Confirm",
 			notaryRepository: notary.GetUninitializedNotaryRepository,
 			args:             []string{"reg-name.io/image"},
-			expectedMessage:  "Please confirm you would like to delete all signature data for reg-name.io/image? [y/N] \nAborting action.",
+			expectedMessage:  "Confirm you would like to delete all signature data for reg-name.io/image? [y/N] ",
+			expectedErr:      revokeCancelledError,
 		},
 		{
 			doc:              "UninitializedErrors_NoTrustData",
@@ -102,7 +109,8 @@ func TestTrustRevokeCommand(t *testing.T) {
 			doc:              "EmptyNotaryRepo_Confirm",
 			notaryRepository: notary.GetEmptyTargetsNotaryRepository,
 			args:             []string{"reg-name.io/image"},
-			expectedMessage:  "Please confirm you would like to delete all signature data for reg-name.io/image? [y/N] \nAborting action.",
+			expectedMessage:  "Confirm you would like to delete all signature data for reg-name.io/image? [y/N] ",
+			expectedErr:      revokeCancelledError,
 		},
 		{
 			doc:              "EmptyNotaryRepo_NoSignedTags",
@@ -120,7 +128,8 @@ func TestTrustRevokeCommand(t *testing.T) {
 			doc:              "AllSigConfirmation",
 			notaryRepository: notary.GetEmptyTargetsNotaryRepository,
 			args:             []string{"alpine"},
-			expectedMessage:  "Please confirm you would like to delete all signature data for alpine? [y/N] \nAborting action.",
+			expectedMessage:  "Confirm you would like to delete all signature data for alpine? [y/N] ",
+			expectedErr:      revokeCancelledError,
 		},
 	}
 
@@ -131,11 +140,12 @@ func TestTrustRevokeCommand(t *testing.T) {
 			cmd := newRevokeCommand(cli)
 			cmd.SetArgs(tc.args)
 			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
 			if tc.expectedErr != "" {
 				assert.ErrorContains(t, cmd.Execute(), tc.expectedErr)
-				return
+			} else {
+				assert.NilError(t, cmd.Execute())
 			}
-			assert.NilError(t, cmd.Execute())
 			assert.Check(t, is.Contains(cli.OutBuffer().String(), tc.expectedMessage))
 		})
 	}
@@ -147,4 +157,17 @@ func TestGetSignableRolesForTargetAndRemoveError(t *testing.T) {
 	target := client.Target{}
 	err = getSignableRolesForTargetAndRemove(target, notaryRepo)
 	assert.Error(t, err, "client is offline")
+}
+
+func TestRevokeTrustPromptTermination(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cli := test.NewFakeCli(&fakeClient{})
+	cmd := newRevokeCommand(cli)
+	cmd.SetArgs([]string{"example/trust-demo"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	test.TerminatePrompt(ctx, t, cmd, cli)
+	golden.Assert(t, cli.OutBuffer().String(), "trust-revoke-prompt-termination.golden")
 }

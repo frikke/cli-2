@@ -43,7 +43,7 @@
 #   "yes" - Show names and ids
 #
 # You can tailor completion for the "events", "history", "inspect", "run",
-# "rmi" and "save" commands by settings the following environment
+# "rmi" and "save" commands by setting the following environment
 # variables:
 #
 # DOCKER_COMPLETION_SHOW_IMAGE_IDS
@@ -63,7 +63,7 @@
 # must have access to the socket for the completions to function correctly
 #
 # Note for developers:
-# Please arrange options sorted alphabetically by long name with the short
+# Arrange options sorted alphabetically by long name with the short
 # options immediately following their corresponding long form.
 # This order should be applied to lists, alternatives and code blocks.
 
@@ -891,7 +891,6 @@ __docker_complete_log_drivers() {
 		journald
 		json-file
 		local
-		logentries
 		none
 		splunk
 		syslog
@@ -916,11 +915,10 @@ __docker_complete_log_options() {
 	local journald_options="$common_options1 $common_options2 tag"
 	local json_file_options="$common_options1 $common_options2 compress max-file max-size"
 	local local_options="$common_options1 compress max-file max-size"
-	local logentries_options="$common_options1 $common_options2 line-only logentries-token tag"
 	local splunk_options="$common_options1 $common_options2 splunk-caname splunk-capath splunk-format splunk-gzip splunk-gzip-level splunk-index splunk-insecureskipverify splunk-source splunk-sourcetype splunk-token splunk-url splunk-verify-connection tag"
 	local syslog_options="$common_options1 $common_options2 syslog-address syslog-facility syslog-format syslog-tls-ca-cert syslog-tls-cert syslog-tls-key syslog-tls-skip-verify tag"
 
-	local all_options="$fluentd_options $gcplogs_options $gelf_options $journald_options $logentries_options $json_file_options $syslog_options $splunk_options"
+	local all_options="$fluentd_options $gcplogs_options $gelf_options $journald_options $json_file_options $syslog_options $splunk_options"
 
 	case $(__docker_value_of_option --log-driver) in
 		'')
@@ -946,9 +944,6 @@ __docker_complete_log_options() {
 			;;
 		local)
 			COMPREPLY=( $( compgen -W "$local_options" -S = -- "$cur" ) )
-			;;
-		logentries)
-			COMPREPLY=( $( compgen -W "$logentries_options" -S = -- "$cur" ) )
 			;;
 		syslog)
 			COMPREPLY=( $( compgen -W "$syslog_options" -S = -- "$cur" ) )
@@ -976,7 +971,7 @@ __docker_complete_log_driver_options() {
 			__docker_nospace
 			return
 			;;
-		compress|fluentd-async-connect)
+		compress|fluentd-async)
 			COMPREPLY=( $( compgen -W "false true" -- "${cur##*=}" ) )
 			return
 			;;
@@ -1142,12 +1137,16 @@ __docker_complete_user_group() {
 	fi
 }
 
-DOCKER_PLUGINS_PATH=$(docker info --format '{{range .ClientInfo.Plugins}}{{.Path}}:{{end}}')
+__docker_plugins_path() {
+	local docker_plugins_path=$(docker info --format '{{range .ClientInfo.Plugins}}{{.Path}}:{{end}}')
+	echo "${docker_plugins_path//:/ }"
+}
 
 __docker_complete_plugin() {
 	local path=$1
 	local completionCommand="__completeNoDesc"
 	local resultArray=($path $completionCommand)
+	local current="$cur"
 	for value in "${words[@]:2}"; do
 		if [ -z "$value" ]; then
 			resultArray+=( "''" )
@@ -1845,14 +1844,14 @@ _docker_container_rename() {
 
 _docker_container_restart() {
 	case "$prev" in
-		--time|-t)
+		--timeout|--time|-t)
 			return
 			;;
 	esac
 
 	case "$cur" in
 		-*)
-			COMPREPLY=( $( compgen -W "--help --time -t" -- "$cur" ) )
+			COMPREPLY=( $( compgen -W "--help --timeout -t" -- "$cur" ) )
 			;;
 		*)
 			__docker_complete_containers_all
@@ -2257,14 +2256,14 @@ _docker_container_stats() {
 
 _docker_container_stop() {
 	case "$prev" in
-		--time|-t)
+		--timeout|--time|-t)
 			return
 			;;
 	esac
 
 	case "$cur" in
 		-*)
-			COMPREPLY=( $( compgen -W "--help --time -t" -- "$cur" ) )
+			COMPREPLY=( $( compgen -W "--help --timeout -t" -- "$cur" ) )
 			;;
 		*)
 			__docker_complete_containers_stoppable
@@ -2552,8 +2551,6 @@ _docker_daemon() {
 	local options_with_args="
 		$global_options_with_args
 		--add-runtime
-		--allow-nondistributable-artifacts
-		--api-cors-header
 		--authorization-plugin
 		--bip
 		--bridge -b
@@ -2592,7 +2589,6 @@ _docker_daemon() {
 		--mtu
 		--network-control-plane-mtu
 		--node-generic-resource
-		--oom-score-adjust
 		--pidfile -p
 		--registry-mirror
 		--seccomp-profile
@@ -5082,7 +5078,7 @@ _docker_system_events() {
 			return
 			;;
 		daemon)
-			local name=$(__docker_q info | sed -n 's/^\(ID\|Name\): //p')
+			local name=$(__docker_q info --format '{{.Info.Name}} {{.Info.ID}}')
 			COMPREPLY=( $( compgen -W "$name" -- "${cur##*=}" ) )
 			return
 			;;
@@ -5504,7 +5500,7 @@ _docker() {
 	# Create completion functions for all registered plugins
 	local known_plugin_commands=()
 	local plugin_name=""
-	for plugin_path in ${DOCKER_PLUGINS_PATH//:/ }; do
+	for plugin_path in $(__docker_plugins_path); do
 		plugin_name=$(basename "$plugin_path" | sed 's/ *$//')
 		plugin_name=${plugin_name#docker-}
 		plugin_name=${plugin_name%%.*}

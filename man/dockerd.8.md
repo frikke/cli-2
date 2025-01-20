@@ -6,11 +6,10 @@ dockerd - Enable daemon mode
 # SYNOPSIS
 **dockerd**
 [**--add-runtime**[=*[]*]]
-[**--allow-nondistributable-artifacts**[=*[]*]]
-[**--api-cors-header**=[=*API-CORS-HEADER*]]
 [**--authorization-plugin**[=*[]*]]
 [**-b**|**--bridge**[=*BRIDGE*]]
 [**--bip**[=*BIP*]]
+[**--bip6**[=*BIP*]]
 [**--cgroup-parent**[=*[]*]]
 [**--config-file**[=*path*]]
 [**--containerd**[=*SOCKET-PATH*]]
@@ -20,6 +19,7 @@ dockerd - Enable daemon mode
 [**--default-gateway**[=*DEFAULT-GATEWAY*]]
 [**--default-gateway-v6**[=*DEFAULT-GATEWAY-V6*]]
 [**--default-address-pool**[=*DEFAULT-ADDRESS-POOL*]]
+[**--default-network-opt**[=*DRIVER=OPT=VALUE*]]
 [**--default-runtime**[=*runc*]]
 [**--default-ipc-mode**=*MODE*]
 [**--default-shm-size**[=*64MiB*]]
@@ -30,11 +30,13 @@ dockerd - Enable daemon mode
 [**--exec-opt**[=*[]*]]
 [**--exec-root**[=*/var/run/docker*]]
 [**--experimental**[=**false**]]
+[**--feature**[=*NAME*[=**true**|**false**]]
 [**--fixed-cidr**[=*FIXED-CIDR*]]
 [**--fixed-cidr-v6**[=*FIXED-CIDR-V6*]]
 [**-G**|**--group**[=*docker*]]
-[**-H**|**--host**[=*[]*]]
 [**--help**]
+[**-H**|**--host**[=*[]*]]
+[**--host-gateway-ip**[=*HOST-GATEWAY-IP*]]
 [**--http-proxy**[*""*]]
 [**--https-proxy**[*""*]]
 [**--icc**[=**true**]]
@@ -43,6 +45,7 @@ dockerd - Enable daemon mode
 [**--insecure-registry**[=*[]*]]
 [**--ip**[=*0.0.0.0*]]
 [**--ip-forward**[=**true**]]
+[**--ip-forward-no-drop**[=**true**]]
 [**--ip-masq**[=**true**]]
 [**--iptables**[=**true**]]
 [**--ipv6**]
@@ -51,6 +54,7 @@ dockerd - Enable daemon mode
 [**--label**[=*[]*]]
 [**--live-restore**[=**false**]]
 [**--log-driver**[=*json-file*]]
+[**--log-format**="*text*|*json*"]
 [**--log-opt**[=*map[]*]]
 [**--mtu**[=*0*]]
 [**--max-concurrent-downloads**[=*3*]]
@@ -121,24 +125,6 @@ $ sudo dockerd --add-runtime runc=runc --add-runtime custom=/usr/local/bin/my-ru
 
   **Note**: defining runtime arguments via the command line is not supported.
 
-**--allow-nondistributable-artifacts**=[]
-  Push nondistributable artifacts to the specified registries.
-
-  List can contain elements with CIDR notation to specify a whole subnet.
-
-  This option is useful when pushing images containing nondistributable
-  artifacts to a registry on an air-gapped network so hosts on that network can
-  pull the images without connecting to another server.
-
-  **Warning**: Nondistributable artifacts typically have restrictions on how
-  and where they can be distributed and shared. Only use this feature to push
-  artifacts to private registries and ensure that you are in compliance with
-  any terms that cover redistributing nondistributable artifacts.
-
-**--api-cors-header**=""
-  Set CORS headers in the Engine API. Default is cors disabled. Give urls like
-  "http://foo, http://bar, ...". Give "\*" to allow all.
-
 **--authorization-plugin**=""
   Set authorization plugins to load
 
@@ -147,7 +133,11 @@ $ sudo dockerd --add-runtime runc=runc --add-runtime custom=/usr/local/bin/my-ru
   container networking
 
 **--bip**=""
-  Use the provided CIDR notation address for the dynamically created bridge
+  Use the provided CIDR notation IPv4 address for the dynamically created bridge
+  (docker0); Mutually exclusive of \-b
+
+**--bip6**=""
+  Use the provided CIDR notation IPv6 address for the dynamically created bridge
   (docker0); Mutually exclusive of \-b
 
 **--cgroup-parent**=""
@@ -186,6 +176,9 @@ $ sudo dockerd --add-runtime runc=runc --add-runtime custom=/usr/local/bin/my-ru
   Example: base=172.30.0.0/16,size=24 will set the default
   address pools for the selected scope networks to {172.30.[0-255].0/24}
 
+**--default-network-opt**=*DRIVER=OPT=VALUE*
+  Default network driver options
+
 **--default-runtime**=*"runtime"*
   Set default runtime if there're more than one specified by **--add-runtime**.
 
@@ -218,6 +211,14 @@ $ sudo dockerd --add-runtime runc=runc --add-runtime custom=/usr/local/bin/my-ru
 **--experimental**=""
   Enable the daemon experimental features.
 
+**--feature**=*NAME*[=**true**|**false**]
+  Enable or disable a feature in the daemon. This option corresponds
+  with the "features" field in the daemon.json configuration file. Using
+  both the command-line option and the "features" field in the configuration
+  file produces an error. The feature option can be specified multiple times
+  to configure multiple features.
+  Usage example: `--feature containerd-snapshotter` or `--feature containerd-snapshotter=true`.
+
 **--fixed-cidr**=""
   IPv4 subnet for fixed IPs (e.g., 10.20.0.0/16); this subnet must be nested in
   the bridge subnet (which is defined by \-b or \-\-bip).
@@ -229,13 +230,18 @@ $ sudo dockerd --add-runtime runc=runc --add-runtime custom=/usr/local/bin/my-ru
   Group to assign the unix socket specified by -H when running in daemon mode.
   use '' (the empty string) to disable setting of a group. Default is `docker`.
 
+**--help**
+  Print usage statement
+
 **-H**, **--host**=[*unix:///var/run/docker.sock*]: tcp://[host:port] to bind or
 unix://[/path/to/socket] to use.
   The socket(s) to bind to in daemon mode specified using one or more
   tcp://host:port, unix:///path/to/socket, fd://\* or fd://socketfd.
 
-**--help**
-  Print usage statement
+**--host-gateway-ip**=[*2001:db8::1234*]
+  Supply host addresses to substitute for the special string host-gateway in
+  --add-host options. Addresses from the docker0 bridge are used by default.
+  Two of these options are allowed, one IPv4 and one IPv6 address.
 
 **--http-proxy***""*
   Proxy URL for HTTP requests unless overridden by NoProxy.
@@ -280,10 +286,19 @@ unix://[/path/to/socket] to use.
   has no effect.
 
   This setting will also enable IPv6 forwarding if you have both
-  **--ip-forward=true** and **--fixed-cidr-v6** set. Note that this may reject
-  Router Advertisements and interfere with the host's existing IPv6
-  configuration. For more information, please consult the documentation about
+  **--ip-forward=true** and an IPv6 enabled bridge network. Note that this
+  may reject Router Advertisements and interfere with the host's existing IPv6
+  configuration. For more information, consult the documentation about
   "Advanced Networking - IPv6".
+
+**--ip-forward-no-drop**=**true**|**false**
+  When **false**, the default, if Docker enables IP forwarding itself (see
+  **--ip-forward**), and **--iptables** or **--ip6tables** are enabled, it
+  also sets the default policy for the FORWARD chain in the iptables or
+  ip6tables filter table to DROP.
+
+  When **true**, and when IP forwarding is already enabled, Docker does
+  not modify the default policy of the FORWARD chain.
 
 **--ip-masq**=**true**|**false**
   Enable IP masquerading for bridge's IP range. Default is **true**.
@@ -297,7 +312,7 @@ unix://[/path/to/socket] to use.
   containers. Use together with **--fixed-cidr-v6** to provide globally routable
   IPv6 addresses. IPv6 forwarding will be enabled if not used with
   **--ip-forward=false**. This may collide with your host's current IPv6
-  settings. For more information please consult the documentation about
+  settings. For more information consult the documentation about
   "Advanced Networking - IPv6".
 
 **--isolation**="*default*"
@@ -319,6 +334,9 @@ unix://[/path/to/socket] to use.
 **--log-driver**="**json-file**|**syslog**|**journald**|**gelf**|**fluentd**|**awslogs**|**splunk**|**etwlogs**|**gcplogs**|**none**"
   Default driver for container logs. Default is **json-file**.
   **Warning**: **docker logs** command works only for **json-file** logging driver.
+
+**--log-format**="*text*|*json*"
+  Set the format for logs produced by the daemon. Default is "text".
 
 **--log-opt**=[]
   Logging driver specific options.

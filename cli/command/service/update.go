@@ -13,10 +13,10 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	mounttypes "github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/api/types/versions"
 	"github.com/docker/docker/client"
-	units "github.com/docker/go-units"
 	"github.com/moby/swarmkit/v2/api/defaults"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -31,7 +31,7 @@ func newUpdateCommand(dockerCli command.Cli) *cobra.Command {
 		Short: "Update a service",
 		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUpdate(dockerCli, cmd.Flags(), options, args[0])
+			return runUpdate(cmd.Context(), dockerCli, cmd.Flags(), options, args[0])
 		},
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return CompletionFn(dockerCli)(cmd, args, toComplete)
@@ -108,6 +108,8 @@ func newUpdateCommand(dockerCli command.Cli) *cobra.Command {
 	flags.SetAnnotation(flagUlimitAdd, "version", []string{"1.41"})
 	flags.Var(newListOptsVar(), flagUlimitRemove, "Remove a ulimit option")
 	flags.SetAnnotation(flagUlimitRemove, "version", []string{"1.41"})
+	flags.Int64Var(&options.oomScoreAdj, flagOomScoreAdj, 0, "Tune host's OOM preferences (-1000 to 1000) ")
+	flags.SetAnnotation(flagOomScoreAdj, "version", []string{"1.46"})
 
 	// Add needs parsing, Remove only needs the key
 	flags.Var(newListOptsVar(), flagGenericResourcesRemove, "Remove a Generic resource")
@@ -127,9 +129,8 @@ func newListOptsVarWithValidator(validator opts.ValidatorFctType) *opts.ListOpts
 }
 
 //nolint:gocyclo
-func runUpdate(dockerCli command.Cli, flags *pflag.FlagSet, options *serviceOptions, serviceID string) error {
+func runUpdate(ctx context.Context, dockerCli command.Cli, flags *pflag.FlagSet, options *serviceOptions, serviceID string) error {
 	apiClient := dockerCli.Client()
-	ctx := context.Background()
 
 	service, _, err := apiClient.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
 	if err != nil {
@@ -195,14 +196,14 @@ func runUpdate(dockerCli command.Cli, flags *pflag.FlagSet, options *serviceOpti
 		}
 	}
 
-	updatedSecrets, err := getUpdatedSecrets(apiClient, flags, spec.TaskTemplate.ContainerSpec.Secrets)
+	updatedSecrets, err := getUpdatedSecrets(ctx, apiClient, flags, spec.TaskTemplate.ContainerSpec.Secrets)
 	if err != nil {
 		return err
 	}
 
 	spec.TaskTemplate.ContainerSpec.Secrets = updatedSecrets
 
-	updatedConfigs, err := getUpdatedConfigs(apiClient, flags, spec.TaskTemplate.ContainerSpec)
+	updatedConfigs, err := getUpdatedConfigs(ctx, apiClient, flags, spec.TaskTemplate.ContainerSpec)
 	if err != nil {
 		return err
 	}
@@ -219,18 +220,19 @@ func runUpdate(dockerCli command.Cli, flags *pflag.FlagSet, options *serviceOpti
 	if err != nil {
 		return err
 	}
-	if sendAuth {
+	switch {
+	case sendAuth:
 		// Retrieve encoded auth token from the image reference
 		// This would be the old image if it didn't change in this update
 		image := spec.TaskTemplate.ContainerSpec.Image
-		encodedAuth, err := command.RetrieveAuthTokenFromImage(ctx, dockerCli, image)
+		encodedAuth, err := command.RetrieveAuthTokenFromImage(dockerCli.ConfigFile(), image)
 		if err != nil {
 			return err
 		}
 		updateOpts.EncodedRegistryAuth = encodedAuth
-	} else if clientSideRollback {
+	case clientSideRollback:
 		updateOpts.RegistryAuthFrom = types.RegistryAuthFromPreviousSpec
-	} else {
+	default:
 		updateOpts.RegistryAuthFrom = types.RegistryAuthFromSpec
 	}
 
@@ -249,7 +251,7 @@ func runUpdate(dockerCli command.Cli, flags *pflag.FlagSet, options *serviceOpti
 		return nil
 	}
 
-	return waitOnService(ctx, dockerCli, serviceID, options.quiet)
+	return WaitOnService(ctx, dockerCli, serviceID, options.quiet)
 }
 
 //nolint:gocyclo
@@ -365,6 +367,10 @@ func updateService(ctx context.Context, apiClient client.NetworkAPIClient, flags
 		taskResources().Reservations = spec.TaskTemplate.Resources.Reservations
 		updateInt64Value(flagReserveCPU, &task.Resources.Reservations.NanoCPUs)
 		updateInt64Value(flagReserveMemory, &task.Resources.Reservations.MemoryBytes)
+	}
+
+	if anyChanged(flags, flagOomScoreAdj) {
+		updateInt64(flagOomScoreAdj, &task.ContainerSpec.OomScoreAdj)
 	}
 
 	if err := addGenericResources(flags, task); err != nil {
@@ -709,8 +715,8 @@ func updateSysCtls(flags *pflag.FlagSet, field *map[string]string) {
 	}
 }
 
-func updateUlimits(flags *pflag.FlagSet, ulimits []*units.Ulimit) []*units.Ulimit {
-	newUlimits := make(map[string]*units.Ulimit)
+func updateUlimits(flags *pflag.FlagSet, ulimits []*container.Ulimit) []*container.Ulimit {
+	newUlimits := make(map[string]*container.Ulimit)
 
 	for _, ulimit := range ulimits {
 		newUlimits[ulimit.Name] = ulimit
@@ -727,8 +733,10 @@ func updateUlimits(flags *pflag.FlagSet, ulimits []*units.Ulimit) []*units.Ulimi
 			newUlimits[ulimit.Name] = ulimit
 		}
 	}
-
-	var limits []*units.Ulimit
+	if len(newUlimits) == 0 {
+		return nil
+	}
+	limits := make([]*container.Ulimit, 0, len(newUlimits))
 	for _, ulimit := range newUlimits {
 		limits = append(limits, ulimit)
 	}
@@ -760,7 +768,7 @@ func updateEnvironment(flags *pflag.FlagSet, field *[]string) {
 	}
 }
 
-func getUpdatedSecrets(apiClient client.SecretAPIClient, flags *pflag.FlagSet, secrets []*swarm.SecretReference) ([]*swarm.SecretReference, error) {
+func getUpdatedSecrets(ctx context.Context, apiClient client.SecretAPIClient, flags *pflag.FlagSet, secrets []*swarm.SecretReference) ([]*swarm.SecretReference, error) {
 	newSecrets := []*swarm.SecretReference{}
 
 	toRemove := buildToRemoveSet(flags, flagSecretRemove)
@@ -773,7 +781,7 @@ func getUpdatedSecrets(apiClient client.SecretAPIClient, flags *pflag.FlagSet, s
 	if flags.Changed(flagSecretAdd) {
 		values := flags.Lookup(flagSecretAdd).Value.(*opts.SecretOpt).Value()
 
-		addSecrets, err := ParseSecrets(apiClient, values)
+		addSecrets, err := ParseSecrets(ctx, apiClient, values)
 		if err != nil {
 			return nil, err
 		}
@@ -783,7 +791,7 @@ func getUpdatedSecrets(apiClient client.SecretAPIClient, flags *pflag.FlagSet, s
 	return newSecrets, nil
 }
 
-func getUpdatedConfigs(apiClient client.ConfigAPIClient, flags *pflag.FlagSet, spec *swarm.ContainerSpec) ([]*swarm.ConfigReference, error) {
+func getUpdatedConfigs(ctx context.Context, apiClient client.ConfigAPIClient, flags *pflag.FlagSet, spec *swarm.ContainerSpec) ([]*swarm.ConfigReference, error) {
 	var (
 		// credSpecConfigName stores the name of the config specified by the
 		// credential-spec flag. if a Runtime target Config with this name is
@@ -799,7 +807,7 @@ func getUpdatedConfigs(apiClient client.ConfigAPIClient, flags *pflag.FlagSet, s
 	if flags.Changed(flagCredentialSpec) {
 		credSpec := flags.Lookup(flagCredentialSpec).Value.(*credentialSpecOpt).Value()
 		credSpecConfigName = credSpec.Config
-	} else {
+	} else { //nolint:gocritic // ignore  elseif: can replace 'else {if cond {}}' with 'else if cond {}'
 		// if the credential spec flag has not changed, then check if there
 		// already is a credentialSpec. if there is one, and it's for a Config,
 		// then it's from the old object, and its value is the config ID. we
@@ -832,7 +840,7 @@ func getUpdatedConfigs(apiClient client.ConfigAPIClient, flags *pflag.FlagSet, s
 	}
 
 	if len(resolveConfigs) > 0 {
-		addConfigs, err := ParseConfigs(apiClient, resolveConfigs)
+		addConfigs, err := ParseConfigs(ctx, apiClient, resolveConfigs)
 		if err != nil {
 			return nil, err
 		}
@@ -1050,7 +1058,6 @@ func updatePorts(flags *pflag.FlagSet, portConfig *[]swarm.PortConfig) error {
 
 	// Build the current list of portConfig
 	for _, entry := range *portConfig {
-		entry := entry
 		if _, ok := portSet[portConfigToString(&entry)]; !ok {
 			portSet[portConfigToString(&entry)] = entry
 		}
@@ -1078,7 +1085,6 @@ portLoop:
 		ports := flags.Lookup(flagPublishAdd).Value.(*opts.PortOpt).Value()
 
 		for _, port := range ports {
-			port := port
 			if _, ok := portSet[portConfigToString(&port)]; ok {
 				continue
 			}
@@ -1292,45 +1298,45 @@ func updateNetworks(ctx context.Context, apiClient client.NetworkAPIClient, flag
 	// values to spec.TaskTemplate.Networks.
 	specNetworks := spec.TaskTemplate.Networks
 	if len(specNetworks) == 0 {
-		specNetworks = spec.Networks
+		specNetworks = spec.Networks //nolint:staticcheck // ignore SA1019: field is deprecated.
 	}
-	spec.Networks = nil
+	spec.Networks = nil //nolint:staticcheck // ignore SA1019: field is deprecated.
 
 	toRemove := buildToRemoveSet(flags, flagNetworkRemove)
 	idsToRemove := make(map[string]struct{})
 	for networkIDOrName := range toRemove {
-		network, err := apiClient.NetworkInspect(ctx, networkIDOrName, types.NetworkInspectOptions{Scope: "swarm"})
+		nw, err := apiClient.NetworkInspect(ctx, networkIDOrName, network.InspectOptions{Scope: "swarm"})
 		if err != nil {
 			return err
 		}
-		idsToRemove[network.ID] = struct{}{}
+		idsToRemove[nw.ID] = struct{}{}
 	}
 
 	existingNetworks := make(map[string]struct{})
-	var newNetworks []swarm.NetworkAttachmentConfig
-	for _, network := range specNetworks {
-		if _, exists := idsToRemove[network.Target]; exists {
+	var newNetworks []swarm.NetworkAttachmentConfig //nolint:prealloc
+	for _, nw := range specNetworks {
+		if _, exists := idsToRemove[nw.Target]; exists {
 			continue
 		}
 
-		newNetworks = append(newNetworks, network)
-		existingNetworks[network.Target] = struct{}{}
+		newNetworks = append(newNetworks, nw)
+		existingNetworks[nw.Target] = struct{}{}
 	}
 
 	if flags.Changed(flagNetworkAdd) {
 		values := flags.Lookup(flagNetworkAdd).Value.(*opts.NetworkOpt)
 		networks := convertNetworks(*values)
-		for _, network := range networks {
-			nwID, err := resolveNetworkID(ctx, apiClient, network.Target)
+		for _, nw := range networks {
+			nwID, err := resolveNetworkID(ctx, apiClient, nw.Target)
 			if err != nil {
 				return err
 			}
 			if _, exists := existingNetworks[nwID]; exists {
-				return errors.Errorf("service is already attached to network %s", network.Target)
+				return errors.Errorf("service is already attached to network %s", nw.Target)
 			}
-			network.Target = nwID
-			newNetworks = append(newNetworks, network)
-			existingNetworks[network.Target] = struct{}{}
+			nw.Target = nwID
+			newNetworks = append(newNetworks, nw)
+			existingNetworks[nw.Target] = struct{}{}
 		}
 	}
 
@@ -1362,7 +1368,7 @@ func updateCredSpecConfig(flags *pflag.FlagSet, containerSpec *swarm.ContainerSp
 		// otherwise, set the credential spec to be the parsed value
 		credSpec := credSpecOpt.Value.(*credentialSpecOpt).Value()
 
-		// if this is a Config credential spec, we we still need to replace the
+		// if this is a Config credential spec, we still need to replace the
 		// value of credSpec.Config with the config ID instead of Name.
 		if credSpec.Config != "" {
 			for _, config := range containerSpec.Configs {
@@ -1503,10 +1509,13 @@ func updateCapabilities(flags *pflag.FlagSet, containerSpec *swarm.ContainerSpec
 }
 
 func capsList(caps map[string]bool) []string {
+	if len(caps) == 0 {
+		return nil
+	}
 	if caps[opts.AllCapabilities] {
 		return []string{opts.AllCapabilities}
 	}
-	var out []string
+	out := make([]string, 0, len(caps))
 	for c := range caps {
 		out = append(out, c)
 	}

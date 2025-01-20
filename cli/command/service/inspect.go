@@ -1,3 +1,6 @@
+// FIXME(thaJeztah): remove once we are a module; the go:build directive prevents go from downgrading language version to go1.16:
+//go:build go1.22
+
 package service
 
 import (
@@ -9,6 +12,7 @@ import (
 	"github.com/docker/cli/cli/command/formatter"
 	flagsHelper "github.com/docker/cli/cli/flags"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/errdefs"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -33,7 +37,7 @@ func newInspectCommand(dockerCli command.Cli) *cobra.Command {
 			if opts.pretty && len(opts.format) > 0 {
 				return errors.Errorf("--format is incompatible with human friendly format")
 			}
-			return runInspect(dockerCli, opts)
+			return runInspect(cmd.Context(), dockerCli, opts)
 		},
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return CompletionFn(dockerCli)(cmd, args, toComplete)
@@ -46,15 +50,14 @@ func newInspectCommand(dockerCli command.Cli) *cobra.Command {
 	return cmd
 }
 
-func runInspect(dockerCli command.Cli, opts inspectOptions) error {
+func runInspect(ctx context.Context, dockerCli command.Cli, opts inspectOptions) error {
 	client := dockerCli.Client()
-	ctx := context.Background()
 
 	if opts.pretty {
 		opts.format = "pretty"
 	}
 
-	getRef := func(ref string) (interface{}, []byte, error) {
+	getRef := func(ref string) (any, []byte, error) {
 		// Service inspect shows defaults values in empty fields.
 		service, _, err := client.ServiceInspectWithRaw(ctx, ref, types.ServiceInspectOptions{InsertDefaults: true})
 		if err == nil || !errdefs.IsNotFound(err) {
@@ -63,10 +66,10 @@ func runInspect(dockerCli command.Cli, opts inspectOptions) error {
 		return nil, nil, errors.Errorf("Error: no such service: %s", ref)
 	}
 
-	getNetwork := func(ref string) (interface{}, []byte, error) {
-		network, _, err := client.NetworkInspectWithRaw(ctx, ref, types.NetworkInspectOptions{Scope: "swarm"})
+	getNetwork := func(ref string) (any, []byte, error) {
+		nw, _, err := client.NetworkInspectWithRaw(ctx, ref, network.InspectOptions{Scope: "swarm"})
 		if err == nil || !errdefs.IsNotFound(err) {
-			return network, nil, err
+			return nw, nil, err
 		}
 		return nil, nil, errors.Errorf("Error: no such network: %s", ref)
 	}

@@ -1,3 +1,6 @@
+// FIXME(thaJeztah): remove once we are a module; the go:build directive prevents go from downgrading language version to go1.16:
+//go:build go1.22
+
 package context
 
 import (
@@ -16,15 +19,15 @@ func makeFakeCli(t *testing.T, opts ...func(*test.FakeCli)) *test.FakeCli {
 	t.Helper()
 	dir := t.TempDir()
 	storeConfig := store.NewConfig(
-		func() interface{} { return &command.DockerContext{} },
-		store.EndpointTypeGetter(docker.DockerEndpoint, func() interface{} { return &docker.EndpointMeta{} }),
+		func() any { return &command.DockerContext{} },
+		store.EndpointTypeGetter(docker.DockerEndpoint, func() any { return &docker.EndpointMeta{} }),
 	)
-	store := &command.ContextStoreWithDefault{
+	contextStore := &command.ContextStoreWithDefault{
 		Store: store.New(dir, storeConfig),
 		Resolver: func() (*command.DefaultContext, error) {
 			return &command.DefaultContext{
 				Meta: store.Metadata{
-					Endpoints: map[string]interface{}{
+					Endpoints: map[string]any{
 						docker.DockerEndpoint: docker.EndpointMeta{
 							Host: "unix:///var/run/docker.sock",
 						},
@@ -42,7 +45,7 @@ func makeFakeCli(t *testing.T, opts ...func(*test.FakeCli)) *test.FakeCli {
 	for _, o := range opts {
 		o(result)
 	}
-	result.SetContextStore(store)
+	result.SetContextStore(contextStore)
 	return result
 }
 
@@ -91,7 +94,6 @@ func TestCreate(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.options.Name, func(t *testing.T) {
 			err := RunCreate(cli, &tc.options)
 			if tc.expecterErr == "" {
@@ -104,6 +106,7 @@ func TestCreate(t *testing.T) {
 }
 
 func assertContextCreateLogging(t *testing.T, cli *test.FakeCli, n string) {
+	t.Helper()
 	assert.Equal(t, n+"\n", cli.OutBuffer().String())
 	assert.Equal(t, fmt.Sprintf("Successfully created context %q\n", n), cli.ErrBuffer().String())
 }
@@ -160,25 +163,24 @@ func TestCreateFromContext(t *testing.T) {
 
 	cli.SetCurrentContext("dummy")
 
-	for _, c := range cases {
-		c := c
-		t.Run(c.name, func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			cli.ResetOutputBuffers()
 			err := RunCreate(cli, &CreateOptions{
 				From:        "original",
-				Name:        c.name,
-				Description: c.description,
-				Docker:      c.docker,
+				Name:        tc.name,
+				Description: tc.description,
+				Docker:      tc.docker,
 			})
 			assert.NilError(t, err)
-			assertContextCreateLogging(t, cli, c.name)
-			newContext, err := cli.ContextStore().GetMetadata(c.name)
+			assertContextCreateLogging(t, cli, tc.name)
+			newContext, err := cli.ContextStore().GetMetadata(tc.name)
 			assert.NilError(t, err)
 			newContextTyped, err := command.GetDockerContext(newContext)
 			assert.NilError(t, err)
 			dockerEndpoint, err := docker.EndpointFromContext(newContext)
 			assert.NilError(t, err)
-			assert.Equal(t, newContextTyped.Description, c.expectedDescription)
+			assert.Equal(t, newContextTyped.Description, tc.expectedDescription)
 			assert.Equal(t, dockerEndpoint.Host, "tcp://42.42.42.42:2375")
 		})
 	}
@@ -215,23 +217,22 @@ func TestCreateFromCurrent(t *testing.T) {
 
 	cli.SetCurrentContext("original")
 
-	for _, c := range cases {
-		c := c
-		t.Run(c.name, func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			cli.ResetOutputBuffers()
 			err := RunCreate(cli, &CreateOptions{
-				Name:        c.name,
-				Description: c.description,
+				Name:        tc.name,
+				Description: tc.description,
 			})
 			assert.NilError(t, err)
-			assertContextCreateLogging(t, cli, c.name)
-			newContext, err := cli.ContextStore().GetMetadata(c.name)
+			assertContextCreateLogging(t, cli, tc.name)
+			newContext, err := cli.ContextStore().GetMetadata(tc.name)
 			assert.NilError(t, err)
 			newContextTyped, err := command.GetDockerContext(newContext)
 			assert.NilError(t, err)
 			dockerEndpoint, err := docker.EndpointFromContext(newContext)
 			assert.NilError(t, err)
-			assert.Equal(t, newContextTyped.Description, c.expectedDescription)
+			assert.Equal(t, newContextTyped.Description, tc.expectedDescription)
 			assert.Equal(t, dockerEndpoint.Host, "tcp://42.42.42.42:2375")
 		})
 	}

@@ -93,7 +93,7 @@ func TestGlobalArgsOnlyParsedOnce(t *testing.T) {
 			args:             []string{"-H", dh, "-H", dh, "version", "-f", "{{.Client.Version}}"},
 			expectedExitCode: 1,
 			expectedOut:      icmd.None,
-			expectedErr:      "Please specify only one -H",
+			expectedErr:      "Specify only one -H",
 		},
 		{
 			name:             "builtin",
@@ -131,7 +131,6 @@ func TestUnknownGlobal(t *testing.T) {
 		"separate-val": {"--unknown", "foo", "helloworld"},
 		"joined-val":   {"--unknown=foo", "helloworld"},
 	} {
-		args := args
 		t.Run(name, func(t *testing.T) {
 			res := icmd.RunCmd(run(args...))
 			res.Assert(t, icmd.Expected{
@@ -180,14 +179,14 @@ func TestCliPluginsVersion(t *testing.T) {
 			args:    []string{"version", "foo"},
 			expCode: 1,
 			expOut:  icmd.None,
-			expErr:  `"docker version" accepts no arguments.`,
+			expErr:  `docker: 'docker version' accepts no arguments`,
 		},
 		{
 			name:    "global-with-plugin-arg",
 			args:    []string{"version", "helloworld"},
 			expCode: 1,
 			expOut:  icmd.None,
-			expErr:  `"docker version" accepts no arguments.`,
+			expErr:  `docker: 'docker version' accepts no arguments`,
 		},
 		{
 			name:    "global-version-flag-with-unknown-arg",
