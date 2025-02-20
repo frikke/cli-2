@@ -1,3 +1,6 @@
+// FIXME(thaJeztah): remove once we are a module; the go:build directive prevents go from downgrading language version to go1.16:
+//go:build go1.22
+
 package context
 
 import (
@@ -21,22 +24,26 @@ type CreateOptions struct {
 	Description string
 	Docker      map[string]string
 	From        string
+
+	// Additional Metadata to store in the context. This option is not
+	// currently exposed to the user.
+	metaData map[string]any
 }
 
 func longCreateDescription() string {
 	buf := bytes.NewBuffer(nil)
 	buf.WriteString("Create a context\n\nDocker endpoint config:\n\n")
 	tw := tabwriter.NewWriter(buf, 20, 1, 3, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tDESCRIPTION")
+	_, _ = fmt.Fprintln(tw, "NAME\tDESCRIPTION")
 	for _, d := range dockerConfigKeysDescriptions {
-		fmt.Fprintf(tw, "%s\t%s\n", d.name, d.description)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\n", d.name, d.description)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 	buf.WriteString("\nExample:\n\n$ docker context create my-context --description \"some description\" --docker \"host=tcp://myserver:2376,ca=~/ca-file,cert=~/cert-file,key=~/key-file\"\n")
 	return buf.String()
 }
 
-func newCreateCommand(dockerCli command.Cli) *cobra.Command {
+func newCreateCommand(dockerCLI command.Cli) *cobra.Command {
 	opts := &CreateOptions{}
 	cmd := &cobra.Command{
 		Use:   "create [OPTIONS] CONTEXT",
@@ -44,65 +51,55 @@ func newCreateCommand(dockerCli command.Cli) *cobra.Command {
 		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.Name = args[0]
-			return RunCreate(dockerCli, opts)
+			return RunCreate(dockerCLI, opts)
 		},
 		Long:              longCreateDescription(),
 		ValidArgsFunction: completion.NoComplete,
 	}
 	flags := cmd.Flags()
 	flags.StringVar(&opts.Description, "description", "", "Description of the context")
-	flags.String(
-		"default-stack-orchestrator", "",
-		`Default orchestrator for stack operations to use with this context ("swarm", "kubernetes", "all")`,
-	)
-	flags.SetAnnotation("default-stack-orchestrator", "deprecated", nil)
-	flags.SetAnnotation("default-stack-orchestrator", "deprecated", nil)
-	flags.MarkDeprecated("default-stack-orchestrator", "option will be ignored")
 	flags.StringToStringVar(&opts.Docker, "docker", nil, "set the docker endpoint")
-	flags.StringToString("kubernetes", nil, "set the kubernetes endpoint")
-	flags.SetAnnotation("kubernetes", "kubernetes", nil)
-	flags.SetAnnotation("kubernetes", "deprecated", nil)
-	flags.MarkDeprecated("kubernetes", "option will be ignored")
 	flags.StringVar(&opts.From, "from", "", "create context from a named context")
 	return cmd
 }
 
 // RunCreate creates a Docker context
-func RunCreate(cli command.Cli, o *CreateOptions) error {
-	s := cli.ContextStore()
+func RunCreate(dockerCLI command.Cli, o *CreateOptions) error {
+	s := dockerCLI.ContextStore()
 	err := checkContextNameForCreation(s, o.Name)
 	if err != nil {
 		return err
 	}
 	switch {
 	case o.From == "" && o.Docker == nil:
-		err = createFromExistingContext(s, cli.CurrentContext(), o)
+		err = createFromExistingContext(s, dockerCLI.CurrentContext(), o)
 	case o.From != "":
 		err = createFromExistingContext(s, o.From, o)
 	default:
-		err = createNewContext(o, cli, s)
+		err = createNewContext(s, o)
 	}
 	if err == nil {
-		fmt.Fprintln(cli.Out(), o.Name)
-		fmt.Fprintf(cli.Err(), "Successfully created context %q\n", o.Name)
+		_, _ = fmt.Fprintln(dockerCLI.Out(), o.Name)
+		_, _ = fmt.Fprintf(dockerCLI.Err(), "Successfully created context %q\n", o.Name)
 	}
 	return err
 }
 
-func createNewContext(o *CreateOptions, cli command.Cli, s store.Writer) error {
+func createNewContext(contextStore store.ReaderWriter, o *CreateOptions) error {
 	if o.Docker == nil {
 		return errors.New("docker endpoint configuration is required")
 	}
-	dockerEP, dockerTLS, err := getDockerEndpointMetadataAndTLS(cli, o.Docker)
+	dockerEP, dockerTLS, err := getDockerEndpointMetadataAndTLS(contextStore, o.Docker)
 	if err != nil {
 		return errors.Wrap(err, "unable to create docker endpoint config")
 	}
 	contextMetadata := store.Metadata{
-		Endpoints: map[string]interface{}{
+		Endpoints: map[string]any{
 			docker.DockerEndpoint: dockerEP,
 		},
 		Metadata: command.DockerContext{
-			Description: o.Description,
+			Description:      o.Description,
+			AdditionalFields: o.metaData,
 		},
 		Name: o.Name,
 	}
@@ -115,10 +112,10 @@ func createNewContext(o *CreateOptions, cli command.Cli, s store.Writer) error {
 	if err := validateEndpoints(contextMetadata); err != nil {
 		return err
 	}
-	if err := s.CreateOrUpdate(contextMetadata); err != nil {
+	if err := contextStore.CreateOrUpdate(contextMetadata); err != nil {
 		return err
 	}
-	return s.ResetTLSMaterial(o.Name, &contextTLSData)
+	return contextStore.ResetTLSMaterial(o.Name, &contextTLSData)
 }
 
 func checkContextNameForCreation(s store.Reader, name string) error {

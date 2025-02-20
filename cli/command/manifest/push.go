@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/distribution/reference"
 	"github.com/docker/cli/cli"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/manifest/types"
@@ -14,7 +15,6 @@ import (
 	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/docker/distribution/manifest/ocischema"
 	"github.com/docker/distribution/manifest/schema2"
-	"github.com/docker/distribution/reference"
 	"github.com/docker/docker/registry"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -53,7 +53,7 @@ func newPushListCommand(dockerCli command.Cli) *cobra.Command {
 		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.target = args[0]
-			return runPush(dockerCli, opts)
+			return runPush(cmd.Context(), dockerCli, opts)
 		},
 	}
 
@@ -63,7 +63,7 @@ func newPushListCommand(dockerCli command.Cli) *cobra.Command {
 	return cmd
 }
 
-func runPush(dockerCli command.Cli, opts pushOpts) error {
+func runPush(ctx context.Context, dockerCli command.Cli, opts pushOpts) error {
 	targetRef, err := normalizeReference(opts.target)
 	if err != nil {
 		return err
@@ -77,13 +77,12 @@ func runPush(dockerCli command.Cli, opts pushOpts) error {
 		return errors.Errorf("%s not found", targetRef)
 	}
 
-	pushRequest, err := buildPushRequest(manifests, targetRef, opts.insecure)
+	req, err := buildPushRequest(manifests, targetRef, opts.insecure)
 	if err != nil {
 		return err
 	}
 
-	ctx := context.Background()
-	if err := pushList(ctx, dockerCli, pushRequest); err != nil {
+	if err := pushList(ctx, dockerCli, req); err != nil {
 		return err
 	}
 	if opts.purge {
@@ -192,9 +191,9 @@ func buildManifestDescriptor(targetRepo *registry.RepositoryInfo, imageManifest 
 }
 
 func buildBlobRequestList(imageManifest types.ImageManifest, repoName reference.Named) ([]manifestBlob, error) {
-	var blobReqs []manifestBlob
-
-	for _, blobDigest := range imageManifest.Blobs() {
+	blobs := imageManifest.Blobs()
+	blobReqs := make([]manifestBlob, 0, len(blobs))
+	for _, blobDigest := range blobs {
 		canonical, err := reference.WithDigest(repoName, blobDigest)
 		if err != nil {
 			return nil, err
@@ -269,13 +268,13 @@ func buildPutManifestRequest(imageManifest types.ImageManifest, targetRef refere
 	return mountRequest{ref: mountRef, manifest: imageManifest}, err
 }
 
-func pushList(ctx context.Context, dockerCli command.Cli, req pushRequest) error {
-	rclient := dockerCli.RegistryClient(req.insecure)
+func pushList(ctx context.Context, dockerCLI command.Cli, req pushRequest) error {
+	rclient := dockerCLI.RegistryClient(req.insecure)
 
 	if err := mountBlobs(ctx, rclient, req.targetRef, req.manifestBlobs); err != nil {
 		return err
 	}
-	if err := pushReferences(ctx, dockerCli.Out(), rclient, req.mountRequests); err != nil {
+	if err := pushReferences(ctx, dockerCLI.Out(), rclient, req.mountRequests); err != nil {
 		return err
 	}
 	dgst, err := rclient.PutManifest(ctx, req.targetRef, req.list)
@@ -283,7 +282,7 @@ func pushList(ctx context.Context, dockerCli command.Cli, req pushRequest) error
 		return err
 	}
 
-	fmt.Fprintln(dockerCli.Out(), dgst.String())
+	_, _ = fmt.Fprintln(dockerCLI.Out(), dgst.String())
 	return nil
 }
 
@@ -293,7 +292,7 @@ func pushReferences(ctx context.Context, out io.Writer, client registryclient.Re
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "Pushed ref %s with digest: %s\n", mount.ref, newDigest)
+		_, _ = fmt.Fprintf(out, "Pushed ref %s with digest: %s\n", mount.ref, newDigest)
 	}
 	return nil
 }

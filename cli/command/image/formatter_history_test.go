@@ -107,8 +107,8 @@ func TestHistoryContext_CreatedSince(t *testing.T) {
 }
 
 func TestHistoryContext_CreatedBy(t *testing.T) {
-	withTabs := `/bin/sh -c apt-key adv --keyserver hkp://pgp.mit.edu:80	--recv-keys 573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62	&& echo "deb http://nginx.org/packages/mainline/debian/ jessie nginx" >> /etc/apt/sources.list  && apt-get update  && apt-get install --no-install-recommends --no-install-suggests -y       ca-certificates       nginx=${NGINX_VERSION}       nginx-module-xslt       nginx-module-geoip       nginx-module-image-filter       nginx-module-perl       nginx-module-njs       gettext-base  && rm -rf /var/lib/apt/lists/*` //nolint:lll
-	expected := `/bin/sh -c apt-key adv --keyserver hkp://pgp.mit.edu:80 --recv-keys 573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62 && echo "deb http://nginx.org/packages/mainline/debian/ jessie nginx" >> /etc/apt/sources.list  && apt-get update  && apt-get install --no-install-recommends --no-install-suggests -y       ca-certificates       nginx=${NGINX_VERSION}       nginx-module-xslt       nginx-module-geoip       nginx-module-image-filter       nginx-module-perl       nginx-module-njs       gettext-base  && rm -rf /var/lib/apt/lists/*` //nolint:lll
+	const withTabs = `/bin/sh -c apt-key adv --keyserver hkp://pgp.mit.edu:80	--recv-keys 573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62	&& echo "deb http://nginx.org/packages/mainline/debian/ jessie nginx" >> /etc/apt/sources.list  && apt-get update  && apt-get install --no-install-recommends --no-install-suggests -y       ca-certificates       nginx=${NGINX_VERSION}       nginx-module-xslt       nginx-module-geoip       nginx-module-image-filter       nginx-module-perl       nginx-module-njs       gettext-base  && rm -rf /var/lib/apt/lists/*` //nolint:revive // ignore line-length-limit
+	const expected = `/bin/sh -c apt-key adv --keyserver hkp://pgp.mit.edu:80 --recv-keys 573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62 && echo "deb http://nginx.org/packages/mainline/debian/ jessie nginx" >> /etc/apt/sources.list  && apt-get update  && apt-get install --no-install-recommends --no-install-suggests -y       ca-certificates       nginx=${NGINX_VERSION}       nginx-module-xslt       nginx-module-geoip       nginx-module-image-filter       nginx-module-perl       nginx-module-njs       gettext-base  && rm -rf /var/lib/apt/lists/*` //nolint:revive // ignore line-length-limit
 
 	var ctx historyContext
 	cases := []historyCase{
@@ -138,8 +138,8 @@ func TestHistoryContext_CreatedBy(t *testing.T) {
 }
 
 func TestHistoryContext_Size(t *testing.T) {
-	size := int64(182964289)
-	expected := "183MB"
+	const size = int64(182964289)
+	const expected = "183MB"
 
 	var ctx historyContext
 	cases := []historyCase{
@@ -170,7 +170,7 @@ func TestHistoryContext_Size(t *testing.T) {
 }
 
 func TestHistoryContext_Comment(t *testing.T) {
-	comment := "Some comment"
+	const comment = "Some comment"
 
 	var ctx historyContext
 	cases := []historyCase{
@@ -213,6 +213,7 @@ func TestHistoryContext_Table(t *testing.T) {
 		{ID: "imageID6", Created: oldDate, CreatedBy: "/bin/bash echo", Size: int64(182964289), Comment: "Hi", Tags: []string{"image:tag2"}},
 	}
 
+	//nolint:dupword // ignore "Duplicate words (CREATED) found"
 	const expectedNoTrunc = `IMAGE      CREATED        CREATED BY                                                                                                                     SIZE      COMMENT
 imageID1   24 hours ago   /bin/bash ls && npm i && npm run test && karma -c karma.conf.js start && npm start && more commands here && the list goes on   183MB     Hi
 imageID2   24 hours ago   /bin/bash echo                                                                                                                 183MB     Hi
@@ -221,6 +222,7 @@ imageID4   24 hours ago   /bin/bash grep                                        
 imageID5   N/A            /bin/bash echo                                                                                                                 183MB     Hi
 imageID6   17 years ago   /bin/bash echo                                                                                                                 183MB     Hi
 `
+	//nolint:dupword // ignore "Duplicate words (CREATED) found"
 	const expectedTrunc = `IMAGE      CREATED        CREATED BY                                      SIZE      COMMENT
 imageID1   24 hours ago   /bin/bash ls && npm i && npm run test && kar…   183MB     Hi
 imageID2   24 hours ago   /bin/bash echo                                  183MB     Hi
@@ -253,7 +255,6 @@ imageID6   17 years ago   /bin/bash echo                                  183MB 
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(string(tc.context.Format), func(t *testing.T) {
 			err := HistoryWrite(tc.context, true, histories)
 			assert.NilError(t, err)

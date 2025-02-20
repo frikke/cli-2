@@ -31,33 +31,32 @@ func newConfigListCommand(dockerCli command.Cli) *cobra.Command {
 		Short:   "List configs",
 		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return RunConfigList(dockerCli, listOpts)
+			return RunConfigList(cmd.Context(), dockerCli, listOpts)
 		},
 		ValidArgsFunction: completion.NoComplete,
 	}
 
 	flags := cmd.Flags()
 	flags.BoolVarP(&listOpts.Quiet, "quiet", "q", false, "Only display IDs")
-	flags.StringVarP(&listOpts.Format, "format", "", "", flagsHelper.FormatHelp)
+	flags.StringVar(&listOpts.Format, "format", "", flagsHelper.FormatHelp)
 	flags.VarP(&listOpts.Filter, "filter", "f", "Filter output based on conditions provided")
 
 	return cmd
 }
 
 // RunConfigList lists Swarm configs.
-func RunConfigList(dockerCli command.Cli, options ListOptions) error {
-	client := dockerCli.Client()
-	ctx := context.Background()
+func RunConfigList(ctx context.Context, dockerCLI command.Cli, options ListOptions) error {
+	apiClient := dockerCLI.Client()
 
-	configs, err := client.ConfigList(ctx, types.ConfigListOptions{Filters: options.Filter.Value()})
+	configs, err := apiClient.ConfigList(ctx, types.ConfigListOptions{Filters: options.Filter.Value()})
 	if err != nil {
 		return err
 	}
 
 	format := options.Format
 	if len(format) == 0 {
-		if len(dockerCli.ConfigFile().ConfigFormat) > 0 && !options.Quiet {
-			format = dockerCli.ConfigFile().ConfigFormat
+		if len(dockerCLI.ConfigFile().ConfigFormat) > 0 && !options.Quiet {
+			format = dockerCLI.ConfigFile().ConfigFormat
 		} else {
 			format = formatter.TableFormatKey
 		}
@@ -68,7 +67,7 @@ func RunConfigList(dockerCli command.Cli, options ListOptions) error {
 	})
 
 	configCtx := formatter.Context{
-		Output: dockerCli.Out(),
+		Output: dockerCLI.Out(),
 		Format: NewFormat(format, options.Quiet),
 	}
 	return FormatWrite(configCtx, configs)

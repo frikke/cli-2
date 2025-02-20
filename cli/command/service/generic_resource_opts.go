@@ -43,7 +43,9 @@ func ParseGenericResources(value []string) ([]swarm.GenericResource, error) {
 	swarmResources := genericResourcesFromGRPC(resources)
 	for _, res := range swarmResources {
 		if res.NamedResourceSpec != nil {
-			return nil, fmt.Errorf("invalid generic-resource request `%s=%s`, Named Generic Resources is not supported for service create or update", res.NamedResourceSpec.Kind, res.NamedResourceSpec.Value)
+			return nil, fmt.Errorf("invalid generic-resource request `%s=%s`, Named Generic Resources is not supported for service create or update",
+				res.NamedResourceSpec.Kind, res.NamedResourceSpec.Value,
+			)
 		}
 	}
 
@@ -52,7 +54,7 @@ func ParseGenericResources(value []string) ([]swarm.GenericResource, error) {
 
 // genericResourcesFromGRPC converts a GRPC GenericResource to a GenericResource
 func genericResourcesFromGRPC(genericRes []*swarmapi.GenericResource) []swarm.GenericResource {
-	var generic []swarm.GenericResource
+	generic := make([]swarm.GenericResource, 0, len(genericRes))
 	for _, res := range genericRes {
 		var current swarm.GenericResource
 
@@ -95,7 +97,7 @@ func buildGenericResourceMap(genericRes []swarm.GenericResource) (map[string]swa
 }
 
 func buildGenericResourceList(genericRes map[string]swarm.GenericResource) []swarm.GenericResource {
-	var l []swarm.GenericResource
+	l := make([]swarm.GenericResource, 0, len(genericRes))
 
 	for _, res := range genericRes {
 		l = append(l, res)

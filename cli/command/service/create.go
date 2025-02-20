@@ -28,7 +28,7 @@ func newCreateCommand(dockerCli command.Cli) *cobra.Command {
 			if len(args) > 1 {
 				opts.args = args[1:]
 			}
-			return runCreate(dockerCli, cmd.Flags(), opts)
+			return runCreate(cmd.Context(), dockerCli, cmd.Flags(), opts)
 		},
 		ValidArgsFunction: completion.NoComplete,
 	}
@@ -68,6 +68,8 @@ func newCreateCommand(dockerCli command.Cli) *cobra.Command {
 	flags.SetAnnotation(flagSysCtl, "version", []string{"1.40"})
 	flags.Var(&opts.ulimits, flagUlimit, "Ulimit options")
 	flags.SetAnnotation(flagUlimit, "version", []string{"1.41"})
+	flags.Int64Var(&opts.oomScoreAdj, flagOomScoreAdj, 0, "Tune host's OOM preferences (-1000 to 1000) ")
+	flags.SetAnnotation(flagOomScoreAdj, "version", []string{"1.46"})
 
 	flags.Var(cliopts.NewListOptsRef(&opts.resources.resGenericResources, ValidateSingleGenericResource), "generic-resource", "User defined resources")
 	flags.SetAnnotation(flagHostAdd, "version", []string{"1.32"})
@@ -76,43 +78,41 @@ func newCreateCommand(dockerCli command.Cli) *cobra.Command {
 	return cmd
 }
 
-func runCreate(dockerCli command.Cli, flags *pflag.FlagSet, opts *serviceOptions) error {
-	apiClient := dockerCli.Client()
+func runCreate(ctx context.Context, dockerCLI command.Cli, flags *pflag.FlagSet, opts *serviceOptions) error {
+	apiClient := dockerCLI.Client()
 	createOpts := types.ServiceCreateOptions{}
-
-	ctx := context.Background()
 
 	service, err := opts.ToService(ctx, apiClient, flags)
 	if err != nil {
 		return err
 	}
 
-	if err = validateAPIVersion(service, dockerCli.Client().ClientVersion()); err != nil {
+	if err = validateAPIVersion(service, dockerCLI.Client().ClientVersion()); err != nil {
 		return err
 	}
 
 	specifiedSecrets := opts.secrets.Value()
 	if len(specifiedSecrets) > 0 {
 		// parse and validate secrets
-		secrets, err := ParseSecrets(apiClient, specifiedSecrets)
+		secrets, err := ParseSecrets(ctx, apiClient, specifiedSecrets)
 		if err != nil {
 			return err
 		}
 		service.TaskTemplate.ContainerSpec.Secrets = secrets
 	}
 
-	if err := setConfigs(apiClient, &service, opts); err != nil {
+	if err := setConfigs(ctx, apiClient, &service, opts); err != nil {
 		return err
 	}
 
-	if err := resolveServiceImageDigestContentTrust(dockerCli, &service); err != nil {
+	if err := resolveServiceImageDigestContentTrust(dockerCLI, &service); err != nil {
 		return err
 	}
 
 	// only send auth if flag was set
 	if opts.registryAuth {
 		// Retrieve encoded auth token from the image reference
-		encodedAuth, err := command.RetrieveAuthTokenFromImage(ctx, dockerCli, opts.image)
+		encodedAuth, err := command.RetrieveAuthTokenFromImage(dockerCLI.ConfigFile(), opts.image)
 		if err != nil {
 			return err
 		}
@@ -130,22 +130,22 @@ func runCreate(dockerCli command.Cli, flags *pflag.FlagSet, opts *serviceOptions
 	}
 
 	for _, warning := range response.Warnings {
-		fmt.Fprintln(dockerCli.Err(), warning)
+		_, _ = fmt.Fprintln(dockerCLI.Err(), warning)
 	}
 
-	fmt.Fprintf(dockerCli.Out(), "%s\n", response.ID)
+	_, _ = fmt.Fprintln(dockerCLI.Out(), response.ID)
 
 	if opts.detach || versions.LessThan(apiClient.ClientVersion(), "1.29") {
 		return nil
 	}
 
-	return waitOnService(ctx, dockerCli, response.ID, opts.quiet)
+	return WaitOnService(ctx, dockerCLI, response.ID, opts.quiet)
 }
 
 // setConfigs does double duty: it both sets the ConfigReferences of the
 // service, and it sets the service CredentialSpec. This is because there is an
 // interplay between the CredentialSpec and the Config it depends on.
-func setConfigs(apiClient client.ConfigAPIClient, service *swarm.ServiceSpec, opts *serviceOptions) error {
+func setConfigs(ctx context.Context, apiClient client.ConfigAPIClient, service *swarm.ServiceSpec, opts *serviceOptions) error {
 	specifiedConfigs := opts.configs.Value()
 	// if the user has requested to use a Config, for the CredentialSpec add it
 	// to the specifiedConfigs as a RuntimeTarget.
@@ -157,7 +157,7 @@ func setConfigs(apiClient client.ConfigAPIClient, service *swarm.ServiceSpec, op
 	}
 	if len(specifiedConfigs) > 0 {
 		// parse and validate configs
-		configs, err := ParseConfigs(apiClient, specifiedConfigs)
+		configs, err := ParseConfigs(ctx, apiClient, specifiedConfigs)
 		if err != nil {
 			return err
 		}

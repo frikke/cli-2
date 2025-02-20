@@ -35,7 +35,7 @@ func newConfigCreateCommand(dockerCli command.Cli) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			createOpts.Name = args[0]
 			createOpts.File = args[1]
-			return RunConfigCreate(dockerCli, createOpts)
+			return RunConfigCreate(cmd.Context(), dockerCli, createOpts)
 		},
 		ValidArgsFunction: completion.NoComplete,
 	}
@@ -48,11 +48,10 @@ func newConfigCreateCommand(dockerCli command.Cli) *cobra.Command {
 }
 
 // RunConfigCreate creates a config with the given options.
-func RunConfigCreate(dockerCli command.Cli, options CreateOptions) error {
-	client := dockerCli.Client()
-	ctx := context.Background()
+func RunConfigCreate(ctx context.Context, dockerCLI command.Cli, options CreateOptions) error {
+	apiClient := dockerCLI.Client()
 
-	var in io.Reader = dockerCli.In()
+	var in io.Reader = dockerCLI.In()
 	if options.File != "-" {
 		file, err := sequential.Open(options.File)
 		if err != nil {
@@ -79,11 +78,11 @@ func RunConfigCreate(dockerCli command.Cli, options CreateOptions) error {
 			Name: options.TemplateDriver,
 		}
 	}
-	r, err := client.ConfigCreate(ctx, spec)
+	r, err := apiClient.ConfigCreate(ctx, spec)
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintln(dockerCli.Out(), r.ID)
+	fmt.Fprintln(dockerCLI.Out(), r.ID)
 	return nil
 }
