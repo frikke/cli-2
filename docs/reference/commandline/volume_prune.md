@@ -1,15 +1,15 @@
 # volume prune
 
 <!---MARKER_GEN_START-->
-Remove all unused local volumes
+Remove unused local volumes
 
 ### Options
 
 | Name                          | Type     | Default | Description                                        |
 |:------------------------------|:---------|:--------|:---------------------------------------------------|
-| [`-a`](#all), [`--all`](#all) |          |         | Remove all unused volumes, not just anonymous ones |
+| [`-a`](#all), [`--all`](#all) | `bool`   |         | Remove all unused volumes, not just anonymous ones |
 | [`--filter`](#filter)         | `filter` |         | Provide filter values (e.g. `label=<label>`)       |
-| `-f`, `--force`               |          |         | Do not prompt for confirmation                     |
+| `-f`, `--force`               | `bool`   |         | Do not prompt for confirmation                     |
 
 
 <!---MARKER_GEN_END-->
@@ -50,7 +50,6 @@ The `label` filter accepts two formats. One is the `label=...` (`label=<key>` or
 which removes volumes with the specified labels. The other
 format is the `label!=...` (`label!=<key>` or `label!=<key>=<value>`), which removes
 volumes without the specified labels.
-
 
 ## Related commands
 

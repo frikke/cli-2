@@ -33,18 +33,28 @@ import (
 )
 
 // New returns net.Conn
-func New(_ context.Context, cmd string, args ...string) (net.Conn, error) {
-	var (
-		c   commandConn
-		err error
-	)
-	c.cmd = exec.Command(cmd, args...)
+func New(ctx context.Context, cmd string, args ...string) (net.Conn, error) {
+	// Don't kill the ssh process if the  context is cancelled. Killing the
+	// ssh process causes an error when go's http.Client tries to reuse the
+	// net.Conn (commandConn).
+	//
+	// Not passing down the Context might seem counter-intuitive, but in this
+	// case, the lifetime of the process should be managed by the http.Client,
+	// not the caller's Context.
+	//
+	// Further details;;
+	//
+	// - https://github.com/docker/cli/pull/3900
+	// - https://github.com/docker/compose/issues/9448#issuecomment-1264263721
+	ctx = context.WithoutCancel(ctx)
+	c := commandConn{cmd: exec.CommandContext(ctx, cmd, args...)}
 	// we assume that args never contains sensitive information
 	logrus.Debugf("commandconn: starting %s with %v", cmd, args)
 	c.cmd.Env = os.Environ()
 	c.cmd.SysProcAttr = &syscall.SysProcAttr{}
 	setPdeathsig(c.cmd)
 	createSession(c.cmd)
+	var err error
 	c.stdin, err = c.cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -149,7 +159,7 @@ func (c *commandConn) handleEOF(err error) error {
 	c.stderrMu.Lock()
 	stderr := c.stderr.String()
 	c.stderrMu.Unlock()
-	return errors.Errorf("command %v has exited with %v, please make sure the URL is valid, and Docker 18.09 or later is installed on the remote host: stderr=%s", c.cmd.Args, werr, stderr)
+	return errors.Errorf("command %v has exited with %v, make sure the URL is valid, and Docker 18.09 or later is installed on the remote host: stderr=%s", c.cmd.Args, werr, stderr)
 }
 
 func ignorableCloseError(err error) bool {
@@ -163,9 +173,8 @@ func (c *commandConn) Read(p []byte) (int, error) {
 	// Close might get called
 	if c.closing.Load() {
 		// If we're currently closing the connection
-		// we don't want to call onEOF, but we do want
-		// to return an io.EOF
-		return 0, io.EOF
+		// we don't want to call onEOF
+		return n, err
 	}
 
 	return n, c.handleEOF(err)
@@ -178,9 +187,8 @@ func (c *commandConn) Write(p []byte) (int, error) {
 	// Close might get called
 	if c.closing.Load() {
 		// If we're currently closing the connection
-		// we don't want to call onEOF, but we do want
-		// to return an io.EOF
-		return 0, io.EOF
+		// we don't want to call onEOF
+		return n, err
 	}
 
 	return n, c.handleEOF(err)
@@ -245,17 +253,17 @@ func (c *commandConn) RemoteAddr() net.Addr {
 	return c.remoteAddr
 }
 
-func (c *commandConn) SetDeadline(t time.Time) error {
+func (*commandConn) SetDeadline(t time.Time) error {
 	logrus.Debugf("unimplemented call: SetDeadline(%v)", t)
 	return nil
 }
 
-func (c *commandConn) SetReadDeadline(t time.Time) error {
+func (*commandConn) SetReadDeadline(t time.Time) error {
 	logrus.Debugf("unimplemented call: SetReadDeadline(%v)", t)
 	return nil
 }
 
-func (c *commandConn) SetWriteDeadline(t time.Time) error {
+func (*commandConn) SetWriteDeadline(t time.Time) error {
 	logrus.Debugf("unimplemented call: SetWriteDeadline(%v)", t)
 	return nil
 }

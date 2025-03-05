@@ -11,8 +11,10 @@ import (
 	flagsHelper "github.com/docker/cli/cli/flags"
 	"github.com/docker/cli/opts"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/system"
 	"github.com/fvbommel/sortorder"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 type listOptions struct {
@@ -30,7 +32,7 @@ func newListCommand(dockerCli command.Cli) *cobra.Command {
 		Short:   "List nodes in the swarm",
 		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runList(dockerCli, options)
+			return runList(cmd.Context(), dockerCli, options)
 		},
 		ValidArgsFunction: completion.NoComplete,
 	}
@@ -39,12 +41,17 @@ func newListCommand(dockerCli command.Cli) *cobra.Command {
 	flags.StringVar(&options.format, "format", "", flagsHelper.FormatHelp)
 	flags.VarP(&options.filter, "filter", "f", "Filter output based on conditions provided")
 
+	flags.VisitAll(func(flag *pflag.Flag) {
+		// Set a default completion function if none was set. We don't look
+		// up if it does already have one set, because Cobra does this for
+		// us, and returns an error (which we ignore for this reason).
+		_ = cmd.RegisterFlagCompletionFunc(flag.Name, completion.NoComplete)
+	})
 	return cmd
 }
 
-func runList(dockerCli command.Cli, options listOptions) error {
+func runList(ctx context.Context, dockerCli command.Cli, options listOptions) error {
 	client := dockerCli.Client()
-	ctx := context.Background()
 
 	nodes, err := client.NodeList(
 		ctx,
@@ -53,7 +60,7 @@ func runList(dockerCli command.Cli, options listOptions) error {
 		return err
 	}
 
-	info := types.Info{}
+	info := system.Info{}
 	if len(nodes) > 0 && !options.quiet {
 		// only non-empty nodes and not quiet, should we call /info api
 		info, err = client.Info(ctx)

@@ -20,7 +20,10 @@ func parseCount(s string) (int, error) {
 		return -1, nil
 	}
 	i, err := strconv.Atoi(s)
-	return i, errors.Wrap(err, "count must be an integer")
+	if err != nil {
+		return 0, errors.Wrap(err, "count must be an integer")
+	}
+	return i, nil
 }
 
 // Set a new mount value
@@ -92,7 +95,7 @@ func (o *GpuOpts) Set(value string) error {
 }
 
 // Type returns the type of this option
-func (o *GpuOpts) Type() string {
+func (*GpuOpts) Type() string {
 	return "gpu-request"
 }
 

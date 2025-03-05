@@ -1,30 +1,124 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"syscall"
 
 	"github.com/docker/cli/cli"
 	pluginmanager "github.com/docker/cli/cli-plugins/manager"
+	"github.com/docker/cli/cli-plugins/socket"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/command/commands"
+	"github.com/docker/cli/cli/debug"
 	cliflags "github.com/docker/cli/cli/flags"
 	"github.com/docker/cli/cli/version"
+	platformsignals "github.com/docker/cli/cmd/docker/internal/signals"
 	"github.com/docker/docker/api/types/versions"
-	"github.com/moby/buildkit/util/appcontext"
+	"github.com/docker/docker/errdefs"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel"
 )
+
+type errCtxSignalTerminated struct {
+	signal os.Signal
+}
+
+func (errCtxSignalTerminated) Error() string {
+	return ""
+}
+
+func main() {
+	err := dockerMain(context.Background())
+	if errors.As(err, &errCtxSignalTerminated{}) {
+		os.Exit(getExitCode(err))
+	}
+
+	if err != nil && !errdefs.IsCancelled(err) {
+		if err.Error() != "" {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+		}
+		os.Exit(getExitCode(err))
+	}
+}
+
+func notifyContext(ctx context.Context, signals ...os.Signal) (context.Context, context.CancelFunc) {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, signals...)
+
+	ctxCause, cancel := context.WithCancelCause(ctx)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			signal.Stop(ch)
+			return
+		case sig := <-ch:
+			cancel(errCtxSignalTerminated{
+				signal: sig,
+			})
+			signal.Stop(ch)
+			return
+		}
+	}()
+
+	return ctxCause, func() {
+		signal.Stop(ch)
+		cancel(nil)
+	}
+}
+
+func dockerMain(ctx context.Context) error {
+	ctx, cancelNotify := notifyContext(ctx, platformsignals.TerminationSignals...)
+	defer cancelNotify()
+
+	dockerCli, err := command.NewDockerCli(command.WithBaseContext(ctx))
+	if err != nil {
+		return err
+	}
+	logrus.SetOutput(dockerCli.Err())
+	otel.SetErrorHandler(debug.OTELErrorHandler)
+
+	return runDocker(ctx, dockerCli)
+}
+
+// getExitCode returns the exit-code to use for the given error.
+// If err is a [cli.StatusError] and has a StatusCode set, it uses the
+// status-code from it, otherwise it returns "1" for any error.
+func getExitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+
+	var userTerminatedErr errCtxSignalTerminated
+	if errors.As(err, &userTerminatedErr) {
+		s, ok := userTerminatedErr.signal.(syscall.Signal)
+		if !ok {
+			return 1
+		}
+		return 128 + int(s)
+	}
+
+	var stErr cli.StatusError
+	if errors.As(err, &stErr) && stErr.StatusCode != 0 { // FIXME(thaJeztah): StatusCode should never be used with a zero status-code. Check if we do this anywhere.
+		return stErr.StatusCode
+	}
+
+	// No status-code provided; all errors should have a non-zero exit code.
+	return 1
+}
 
 func newDockerCommand(dockerCli *command.DockerCli) *cli.TopLevelCommand {
 	var (
 		opts    *cliflags.ClientOptions
-		flags   *pflag.FlagSet
 		helpCmd *cobra.Command
 	)
 
@@ -38,7 +132,7 @@ func newDockerCommand(dockerCli *command.DockerCli) *cli.TopLevelCommand {
 			if len(args) == 0 {
 				return command.ShowHelp(dockerCli.Err())(cmd, args)
 			}
-			return fmt.Errorf("docker: '%s' is not a docker command.\nSee 'docker --help'", args[0])
+			return fmt.Errorf("docker: unknown command: docker %s\n\nRun 'docker --help' for more information", args[0])
 		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			return isSupported(cmd, dockerCli)
@@ -48,16 +142,20 @@ func newDockerCommand(dockerCli *command.DockerCli) *cli.TopLevelCommand {
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd:   false,
 			HiddenDefaultCmd:    true,
-			DisableDescriptions: true,
+			DisableDescriptions: os.Getenv("DOCKER_CLI_DISABLE_COMPLETION_DESCRIPTION") != "",
 		},
 	}
 	cmd.SetIn(dockerCli.In())
 	cmd.SetOut(dockerCli.Out())
 	cmd.SetErr(dockerCli.Err())
 
-	opts, flags, helpCmd = cli.SetupRootCommand(cmd)
-	registerCompletionFuncForGlobalFlags(dockerCli, cmd)
-	flags.BoolP("version", "v", false, "Print version information and quit")
+	opts, helpCmd = cli.SetupRootCommand(cmd)
+
+	// TODO(thaJeztah): move configuring completion for these flags to where the flags are added.
+	_ = cmd.RegisterFlagCompletionFunc("context", completeContextNames(dockerCli))
+	_ = cmd.RegisterFlagCompletionFunc("log-level", completeLogLevels)
+
+	cmd.Flags().BoolP("version", "v", false, "Print version information and quit")
 	setFlagErrorFunc(dockerCli, cmd)
 
 	setupHelpCommand(dockerCli, cmd, helpCmd)
@@ -70,7 +168,7 @@ func newDockerCommand(dockerCli *command.DockerCli) *cli.TopLevelCommand {
 	setValidateArgs(dockerCli, cmd)
 
 	// flags must be the top-level command flags, not cmd.Flags()
-	return cli.NewTopLevelCommand(cmd, dockerCli, opts, flags)
+	return cli.NewTopLevelCommand(cmd, dockerCli, opts, cmd.Flags())
 }
 
 func setFlagErrorFunc(dockerCli command.Cli, cmd *cobra.Command) {
@@ -188,16 +286,80 @@ func setValidateArgs(dockerCli command.Cli, cmd *cobra.Command) {
 	})
 }
 
-func tryPluginRun(dockerCli command.Cli, cmd *cobra.Command, subcommand string, envs []string) error {
+func tryPluginRun(ctx context.Context, dockerCli command.Cli, cmd *cobra.Command, subcommand string, envs []string) error {
 	plugincmd, err := pluginmanager.PluginRunCommand(dockerCli, subcommand, cmd)
 	if err != nil {
 		return err
 	}
-	plugincmd.Env = append(envs, plugincmd.Env...)
+
+	// Establish the plugin socket, adding it to the environment under a
+	// well-known key if successful.
+	srv, err := socket.NewPluginServer(nil)
+	if err == nil {
+		plugincmd.Env = append(plugincmd.Env, socket.EnvKey+"="+srv.Addr().String())
+	}
+	defer func() {
+		// Close the server when plugin execution is over, so that in case
+		// it's still open, any sockets on the filesystem are cleaned up.
+		_ = srv.Close()
+	}()
+
+	// Set additional environment variables specified by the caller.
+	plugincmd.Env = append(plugincmd.Env, envs...)
+
+	// Background signal handling logic: block on the signals channel, and
+	// notify the plugin via the PluginServer (or signal) as appropriate.
+	const exitLimit = 2
+
+	tryTerminatePlugin := func(force bool) {
+		// If stdin is a TTY, the kernel will forward
+		// signals to the subprocess because the shared
+		// pgid makes the TTY a controlling terminal.
+		//
+		// The plugin should have it's own copy of this
+		// termination logic, and exit after 3 retries
+		// on it's own.
+		if dockerCli.Out().IsTerminal() {
+			return
+		}
+
+		// Terminate the plugin server, which will
+		// close all connections with plugin
+		// subprocesses, and signal them to exit.
+		//
+		// Repeated invocations will result in EINVAL,
+		// or EBADF; but that is fine for our purposes.
+		_ = srv.Close()
+
+		// force the process to terminate if it hasn't already
+		if force {
+			_ = plugincmd.Process.Kill()
+			_, _ = fmt.Fprint(dockerCli.Err(), "got 3 SIGTERM/SIGINTs, forcefully exiting\n")
+			os.Exit(1)
+		}
+	}
 
 	go func() {
-		// override SIGTERM handler so we let the plugin shut down first
-		<-appcontext.Context().Done()
+		retries := 0
+		force := false
+		// catch the first signal through context cancellation
+		<-ctx.Done()
+		tryTerminatePlugin(force)
+
+		// register subsequent signals
+		signals := make(chan os.Signal, exitLimit)
+		signal.Notify(signals, platformsignals.TerminationSignals...)
+
+		for range signals {
+			retries++
+			// If we're still running after 3 interruptions
+			// (SIGINT/SIGTERM), send a SIGKILL to the plugin as a
+			// final attempt to terminate, and exit.
+			if retries >= exitLimit {
+				force = true
+			}
+			tryTerminatePlugin(force)
+		}
 	}()
 
 	if err := plugincmd.Run(); err != nil {
@@ -216,7 +378,27 @@ func tryPluginRun(dockerCli command.Cli, cmd *cobra.Command, subcommand string, 
 	return nil
 }
 
-func runDocker(dockerCli *command.DockerCli) error {
+// forceExitAfter3TerminationSignals waits for the first termination signal
+// to be caught and the context to be marked as done, then registers a new
+// signal handler for subsequent signals. It forces the process to exit
+// after 3 SIGTERM/SIGINT signals.
+func forceExitAfter3TerminationSignals(ctx context.Context, w io.Writer) {
+	// wait for the first signal to be caught and the context to be marked as done
+	<-ctx.Done()
+	// register a new signal handler for subsequent signals
+	sig := make(chan os.Signal, 2)
+	signal.Notify(sig, platformsignals.TerminationSignals...)
+
+	// once we have received a total of 3 signals we force exit the cli
+	for i := 0; i < 2; i++ {
+		<-sig
+	}
+	_, _ = fmt.Fprint(w, "\ngot 3 SIGTERM/SIGINTs, forcefully exiting\n")
+	os.Exit(1)
+}
+
+//nolint:gocyclo
+func runDocker(ctx context.Context, dockerCli *command.DockerCli) error {
 	tcmd := newDockerCommand(dockerCli)
 
 	cmd, args, err := tcmd.HandleGlobalFlags()
@@ -224,9 +406,22 @@ func runDocker(dockerCli *command.DockerCli) error {
 		return err
 	}
 
-	if err := tcmd.Initialize(); err != nil {
+	if err := tcmd.Initialize(command.WithEnableGlobalMeterProvider(), command.WithEnableGlobalTracerProvider()); err != nil {
 		return err
 	}
+
+	mp := dockerCli.MeterProvider()
+	if mp, ok := mp.(command.MeterProvider); ok {
+		defer func() {
+			if err := mp.Shutdown(ctx); err != nil {
+				otel.Handle(err)
+			}
+		}()
+	} else {
+		fmt.Fprint(dockerCli.Err(), "Warning: Unexpected OTEL error, metrics may not be flushed")
+	}
+
+	dockerCli.InstrumentCobraCommands(ctx, cmd)
 
 	var envs []string
 	args, os.Args, envs, err = processAliases(dockerCli, cmd, args, os.Args)
@@ -244,48 +439,47 @@ func runDocker(dockerCli *command.DockerCli) error {
 		}
 	}
 
+	var subCommand *cobra.Command
 	if len(args) > 0 {
 		ccmd, _, err := cmd.Find(args)
+		subCommand = ccmd
 		if err != nil || pluginmanager.IsPluginCommand(ccmd) {
-			err := tryPluginRun(dockerCli, cmd, args[0], envs)
+			err := tryPluginRun(ctx, dockerCli, cmd, args[0], envs)
+			if err == nil {
+				if ccmd != nil && dockerCli.Out().IsTerminal() && dockerCli.HooksEnabled() {
+					pluginmanager.RunPluginHooks(ctx, dockerCli, cmd, ccmd, args)
+				}
+				return nil
+			}
 			if !pluginmanager.IsNotFound(err) {
+				// For plugin not found we fall through to
+				// cmd.Execute() which deals with reporting
+				// "command not found" in a consistent way.
 				return err
 			}
-			// For plugin not found we fall through to
-			// cmd.Execute() which deals with reporting
-			// "command not found" in a consistent way.
 		}
 	}
+
+	// This is a fallback for the case where the command does not exit
+	// based on context cancellation.
+	go forceExitAfter3TerminationSignals(ctx, dockerCli.Err())
 
 	// We've parsed global args already, so reset args to those
 	// which remain.
 	cmd.SetArgs(args)
-	return cmd.Execute()
-}
+	err = cmd.ExecuteContext(ctx)
 
-func main() {
-	dockerCli, err := command.NewDockerCli()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	logrus.SetOutput(dockerCli.Err())
-
-	if err := runDocker(dockerCli); err != nil {
-		if sterr, ok := err.(cli.StatusError); ok {
-			if sterr.Status != "" {
-				fmt.Fprintln(dockerCli.Err(), sterr.Status)
-			}
-			// StatusError should only be used for errors, and all errors should
-			// have a non-zero exit status, so never exit with 0
-			if sterr.StatusCode == 0 {
-				os.Exit(1)
-			}
-			os.Exit(sterr.StatusCode)
+	// If the command is being executed in an interactive terminal
+	// and hook are enabled, run the plugin hooks.
+	if subCommand != nil && dockerCli.Out().IsTerminal() && dockerCli.HooksEnabled() {
+		var errMessage string
+		if err != nil {
+			errMessage = err.Error()
 		}
-		fmt.Fprintln(dockerCli.Err(), err)
-		os.Exit(1)
+		pluginmanager.RunCLICommandHooks(ctx, dockerCli, cmd, subCommand, errMessage)
 	}
+
+	return err
 }
 
 type versionDetails interface {
@@ -379,16 +573,16 @@ func hideUnsupportedFeatures(cmd *cobra.Command, details versionDetails) error {
 }
 
 // Checks if a command or one of its ancestors is in the list
-func findCommand(cmd *cobra.Command, commands []string) bool {
+func findCommand(cmd *cobra.Command, cmds []string) bool {
 	if cmd == nil {
 		return false
 	}
-	for _, c := range commands {
+	for _, c := range cmds {
 		if c == cmd.Name() {
 			return true
 		}
 	}
-	return findCommand(cmd.Parent(), commands)
+	return findCommand(cmd.Parent(), cmds)
 }
 
 func isSupported(cmd *cobra.Command, details versionDetails) error {
@@ -402,14 +596,22 @@ func areFlagsSupported(cmd *cobra.Command, details versionDetails) error {
 	errs := []string{}
 
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if !f.Changed {
+		if !f.Changed || len(f.Annotations) == 0 {
 			return
 		}
-		if !isVersionSupported(f, details.CurrentVersion()) {
+		// Important: in the code below, calls to "details.CurrentVersion()" and
+		// "details.ServerInfo()" are deliberately executed inline to make them
+		// be executed "lazily". This is to prevent making a connection with the
+		// daemon to perform a "ping" (even for flags that do not require a
+		// daemon connection).
+		//
+		// See commit b39739123b845f872549e91be184cc583f5b387c for details.
+
+		if _, ok := f.Annotations["version"]; ok && !isVersionSupported(f, details.CurrentVersion()) {
 			errs = append(errs, fmt.Sprintf(`"--%s" requires API version %s, but the Docker daemon API version is %s`, f.Name, getFlagAnnotation(f, "version"), details.CurrentVersion()))
 			return
 		}
-		if !isOSTypeSupported(f, details.ServerInfo().OSType) {
+		if _, ok := f.Annotations["ostype"]; ok && !isOSTypeSupported(f, details.ServerInfo().OSType) {
 			errs = append(errs, fmt.Sprintf(
 				`"--%s" is only supported on a Docker daemon running on %s, but the Docker daemon is running on %s`,
 				f.Name,

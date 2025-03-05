@@ -1,6 +1,7 @@
 package stack
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/docker/cli/cli"
@@ -11,7 +12,7 @@ import (
 	composeLoader "github.com/docker/cli/cli/compose/loader"
 	composetypes "github.com/docker/cli/cli/compose/types"
 	"github.com/spf13/cobra"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 func newConfigCommand(dockerCli command.Cli) *cobra.Command {
@@ -46,17 +47,20 @@ func newConfigCommand(dockerCli command.Cli) *cobra.Command {
 
 // outputConfig returns the merged and interpolated config file
 func outputConfig(configFiles composetypes.ConfigDetails, skipInterpolation bool) (string, error) {
-	optsFunc := func(options *composeLoader.Options) {
-		options.SkipInterpolation = skipInterpolation
+	optsFunc := func(opts *composeLoader.Options) {
+		opts.SkipInterpolation = skipInterpolation
 	}
 	config, err := composeLoader.Load(configFiles, optsFunc)
 	if err != nil {
 		return "", err
 	}
 
-	d, err := yaml.Marshal(&config)
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	err = enc.Encode(&config)
 	if err != nil {
 		return "", err
 	}
-	return string(d), nil
+	return buf.String(), nil
 }

@@ -182,11 +182,11 @@ func (c *mockNativeStore) Get(registryHostname string) (types.AuthConfig, error)
 }
 
 func (c *mockNativeStore) GetAll() (map[string]types.AuthConfig, error) {
-	c.GetAllCallCount = c.GetAllCallCount + 1
+	c.GetAllCallCount++
 	return c.authConfigs, nil
 }
 
-func (c *mockNativeStore) Store(_ types.AuthConfig) error {
+func (*mockNativeStore) Store(_ types.AuthConfig) error {
 	return nil
 }
 
